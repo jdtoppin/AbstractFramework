@@ -234,12 +234,35 @@ end
 ---@class AF_SecretAuraList:Frame
 local AF_SecretAuraListMixin = {}
 
+local function ClearAuraList(auraList)
+    if not auraList then return end
+
+    for _, aura in ipairs(auraList.slots) do
+        aura:ClearAura()
+    end
+    auraList.numAuras = 0
+end
+
 function AF_SecretAuraListMixin:SetFilter(filter)
     self.filter = filter
 end
 
 function AF_SecretAuraListMixin:SetMatchFilters(matchFilters)
     self.matchFilters = matchFilters
+end
+
+function AF_SecretAuraListMixin:SetPartitionFilter(partitionFilter, partitionList)
+    if self.partitionList and self.partitionList ~= partitionList then
+        ClearAuraList(self.partitionList)
+    end
+
+    self.partitionFilter = partitionFilter
+    self.partitionList = partitionList
+    self.partitionEnabled = partitionFilter ~= nil and partitionList ~= nil
+end
+
+function AF_SecretAuraListMixin:SetPartitionEnabled(enabled)
+    self.partitionEnabled = enabled and self.partitionFilter ~= nil and self.partitionList ~= nil
 end
 
 function AF_SecretAuraListMixin:SetSortRule(sortRule, sortDirection)
@@ -254,6 +277,8 @@ end
 function AF_SecretAuraListMixin:RefreshAuras()
     if not self.unit or not self.filter or not self.maxCount then return end
 
+    self:OnBeforeAurasRefresh()
+
     local auraInstanceIDs = GetUnitAuraInstanceIDs(
         self.unit,
         self.filter,
@@ -263,6 +288,8 @@ function AF_SecretAuraListMixin:RefreshAuras()
     )
 
     local count = 0
+    local mainCount = 0
+    local partitionCount = 0
     for _, auraInstanceID in ipairs(auraInstanceIDs) do
         local include = self.matchFilters == nil
         if self.matchFilters then
@@ -277,18 +304,43 @@ function AF_SecretAuraListMixin:RefreshAuras()
         end
 
         if include then
+            local auraList = self
+            local auraIndex
+            if self.partitionEnabled
+                -- PLAYER and the other AuraFilters are evaluated in C. The
+                -- ordinary boolean result can safely select the complementary
+                -- list without reading restricted AuraData fields.
+                and IsAuraFilteredOutByInstanceID(self.unit, auraInstanceID, self.partitionFilter)
+            then
+                auraList = self.partitionList
+                partitionCount = partitionCount + 1
+                auraIndex = partitionCount
+            else
+                mainCount = mainCount + 1
+                auraIndex = mainCount
+            end
+
             count = count + 1
-            self.slots[count]:SetAura(self.unit, auraInstanceID)
+            auraList.slots[auraIndex]:SetAura(self.unit, auraInstanceID)
             if count == self.maxCount then break end
         end
     end
 
-    for index = count + 1, self.maxCount do
+    for index = mainCount + 1, #self.slots do
         self.slots[index]:ClearAura()
+    end
+    if self.partitionList then
+        for index = partitionCount + 1, #self.partitionList.slots do
+            self.partitionList.slots[index]:ClearAura()
+        end
+        self.partitionList.numAuras = partitionCount
     end
 
     self.numAuras = count
-    self:OnAurasUpdated(count)
+    self:OnAurasUpdated(count, mainCount, partitionCount)
+end
+
+function AF_SecretAuraListMixin:OnBeforeAurasRefresh()
 end
 
 function AF_SecretAuraListMixin:OnAurasUpdated()
@@ -310,10 +362,8 @@ end
 function AF_SecretAuraListMixin:ClearUnit()
     self.unit = nil
     self:UnregisterAllEvents()
-    for _, aura in ipairs(self.slots) do
-        aura:ClearAura()
-    end
-    self.numAuras = 0
+    ClearAuraList(self)
+    ClearAuraList(self.partitionList)
     self:OnAurasUpdated(0)
 end
 
