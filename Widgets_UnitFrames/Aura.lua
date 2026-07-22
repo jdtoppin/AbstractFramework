@@ -2,8 +2,11 @@
 local AF = select(2, ...)
 
 local GetAuraApplicationDisplayCount = C_UnitAuras.GetAuraApplicationDisplayCount
+local GetAuraDataByAuraInstanceID = C_UnitAuras.GetAuraDataByAuraInstanceID
+local GetAuraDispelTypeColor = C_UnitAuras.GetAuraDispelTypeColor
 local GetAuraDuration = C_UnitAuras.GetAuraDuration
 local GetUnitAuraInstanceIDs = C_UnitAuras.GetUnitAuraInstanceIDs
+local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
 
 local durationFormatter = C_StringUtil.CreateNumericRuleFormatter()
 durationFormatter:SetBreakpoints({
@@ -13,6 +16,31 @@ durationFormatter:SetBreakpoints({
     },
 })
 
+local dispelTypes = {
+    {0, "None"},
+    {1, "Magic"},
+    {2, "Curse"},
+    {3, "Disease"},
+    {4, "Poison"},
+    {9, "Enrage"},
+    {11, "Bleed"},
+}
+
+local defaultDispelColorCurve
+function AF.GetAuraDispelColorCurve()
+    if defaultDispelColorCurve then return defaultDispelColorCurve end
+
+    local curve = C_CurveUtil.CreateColorCurve()
+    curve:SetType(Enum.LuaCurveType.Step)
+    for _, dispelType in ipairs(dispelTypes) do
+        local r, g, b = AF.GetAuraTypeColor(dispelType[2])
+        curve:AddPoint(dispelType[1], CreateColor(r, g, b, 1))
+    end
+
+    defaultDispelColorCurve = curve
+    return curve
+end
+
 ---@class AF_SecretAura:Button
 local AF_SecretAuraMixin = {}
 
@@ -20,14 +48,26 @@ function AF_SecretAuraMixin:SetAura(unit, auraInstanceID)
     self.unit = unit
     self.auraInstanceID = auraInstanceID
 
-    -- Retail 12.0.7 (wow-ui-source 6e96727): these APIs consume the
-    -- non-secret aura-instance ID and keep restricted AuraData out of Lua.
-    -- Copy() produces the never-secret opaque duration handle accepted by the
-    -- native cooldown and duration-text binding.
+    -- Retail 12.0.7 (wow-ui-source 6e96727): Copy() produces the
+    -- never-secret opaque duration handle accepted by the native cooldown and
+    -- duration-text binding.
     local duration = GetAuraDuration(unit, auraInstanceID):Copy()
     self.duration = duration
 
-    self.icon:SetTexture(self.fallbackIcon)
+    -- The icon can be secret. Never inspect it; forward it directly to the
+    -- documented secret-accepting native texture setter.
+    local auraData = GetAuraDataByAuraInstanceID(unit, auraInstanceID)
+    self.icon:SetTexture(auraData.icon)
+
+    if self.dispelColorCurve then
+        -- GetRGBA may contain secret components. SetVertexColor accepts them,
+        -- so keep the entire value flow inside native APIs.
+        self.dispelOverlay:SetVertexColor(GetAuraDispelTypeColor(unit, auraInstanceID, self.dispelColorCurve):GetRGBA())
+        self.dispelOverlay:Show()
+    else
+        self.dispelOverlay:Hide()
+    end
+
     self.stackText:SetText(GetAuraApplicationDisplayCount(unit, auraInstanceID))
     self.cooldown:SetCooldownFromDurationObject(duration)
     self.durationTextBinding:SetDuration(duration)
@@ -42,12 +82,20 @@ function AF_SecretAuraMixin:ClearAura()
     self.durationTextBinding:Disable()
     self.stackText:SetText("")
     self.icon:SetTexture(self.fallbackIcon)
+    self.dispelOverlay:Hide()
     self:Hide()
 end
 
 function AF_SecretAuraMixin:SetFallbackIcon(texture)
     self.fallbackIcon = texture
     self.icon:SetTexture(texture)
+end
+
+function AF_SecretAuraMixin:EnableDispelColor(enabled, curve)
+    self.dispelColorCurve = enabled and (curve or AF.GetAuraDispelColorCurve()) or nil
+    if not enabled then
+        self.dispelOverlay:Hide()
+    end
 end
 
 function AF_SecretAuraMixin:SetCooldown(startTime, duration, applications, icon)
@@ -59,6 +107,7 @@ function AF_SecretAuraMixin:SetCooldown(startTime, duration, applications, icon)
     self.duration = previewDuration
 
     self.icon:SetTexture(icon)
+    self.dispelOverlay:Hide()
     self.stackText:SetText(applications)
     self.cooldown:SetCooldownFromDurationObject(previewDuration)
     self.durationTextBinding:SetDuration(previewDuration)
@@ -149,6 +198,13 @@ function AF.InitAura(button, noBorder)
     cooldown:SetDrawEdge(false)
     cooldown:SetUseAuraDisplayTime(true)
 
+    local dispelOverlay = button:CreateTexture(nil, "OVERLAY")
+    button.dispelOverlay = dispelOverlay
+    dispelOverlay:SetAllPoints()
+    dispelOverlay:SetTexture([[Interface\Buttons\UI-Debuff-Overlays]])
+    dispelOverlay:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
+    dispelOverlay:Hide()
+
     local durationText = button:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
     button.durationText = durationText
 
@@ -182,6 +238,10 @@ function AF_SecretAuraListMixin:SetFilter(filter)
     self.filter = filter
 end
 
+function AF_SecretAuraListMixin:SetMatchFilters(matchFilters)
+    self.matchFilters = matchFilters
+end
+
 function AF_SecretAuraListMixin:SetSortRule(sortRule, sortDirection)
     self.sortRule = sortRule
     self.sortDirection = sortDirection or Enum.UnitAuraSortDirection.Normal
@@ -197,22 +257,34 @@ function AF_SecretAuraListMixin:RefreshAuras()
     local auraInstanceIDs = GetUnitAuraInstanceIDs(
         self.unit,
         self.filter,
-        self.maxCount,
+        nil,
         self.sortRule,
         self.sortDirection
     )
 
-    local count = #auraInstanceIDs
-    for index = 1, self.maxCount do
-        local aura = self.slots[index]
-        local auraInstanceID = auraInstanceIDs[index]
-        if aura then
-            if auraInstanceID then
-                aura:SetAura(self.unit, auraInstanceID)
-            else
-                aura:ClearAura()
+    local count = 0
+    for _, auraInstanceID in ipairs(auraInstanceIDs) do
+        local include = self.matchFilters == nil
+        if self.matchFilters then
+            -- IsAuraFilteredOutByInstanceID returns an ordinary boolean. These
+            -- checks classify the ID in C without reading restricted AuraData.
+            for _, matchFilter in ipairs(self.matchFilters) do
+                if not IsAuraFilteredOutByInstanceID(self.unit, auraInstanceID, matchFilter) then
+                    include = true
+                    break
+                end
             end
         end
+
+        if include then
+            count = count + 1
+            self.slots[count]:SetAura(self.unit, auraInstanceID)
+            if count == self.maxCount then break end
+        end
+    end
+
+    for index = count + 1, self.maxCount do
+        self.slots[index]:ClearAura()
     end
 
     self.numAuras = count
