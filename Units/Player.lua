@@ -11,7 +11,7 @@ local UnitRace = UnitRace
 local UnitSex = UnitSex
 local GetRealmName = GetRealmName
 local GetNormalizedRealmName = GetNormalizedRealmName
-local GetAutoCompleteRealms = GetAutoCompleteRealms
+local GetAutoCompleteRealms = AF.isRetail and C_AutoComplete.GetAutoCompleteRealms or GetAutoCompleteRealms
 local GetSpecialization = C_SpecializationInfo.GetSpecialization
 local GetSpecializationInfo = C_SpecializationInfo.GetSpecializationInfo
 

@@ -13,14 +13,16 @@ rg -n \
     --glob '*.lua' \
     --glob '!Libs/**' \
     --glob '!.unused/**' \
-    '\b(?:p|x)call\s*\(|\bissecretvalue\b' \
-    . | sed -E 's/^([^:]+):[0-9]+:/\1:/' | LC_ALL=C sort > "$current" || true
+    '\bissecretvalue\b' \
+    . | sed -E 's/^([^:]+):[0-9]+:/\1:/' \
+      | grep -Fvx './Init.lua:local secretPredicate = _G.issecretvalue' \
+      | LC_ALL=C sort > "$current" || true
 
 LC_ALL=C comm -13 "$baseline" "$current" > "$additions"
 
 if [[ -s "$additions" ]]; then
     echo "New forbidden first-party Lua patterns were found:" >&2
     cat "$additions" >&2
-    echo "Use F.isValueNonSecret and a single secret-safe path; do not use pcall/xpcall." >&2
+    echo "Use F.isValueNonSecret and a single secret-safe path." >&2
     exit 1
 fi

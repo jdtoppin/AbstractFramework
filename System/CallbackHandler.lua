@@ -23,9 +23,9 @@ function AF.RegisterCallback(event, callback, priority, tag)
     t[event][callback] = tag or "_no_tag_"
 end
 
-local function GetCallback(_callbacks, result, event, tag)
-    if _callbacks[event] then
-        for fn, v in next, _callbacks[event] do
+local function GetCallback(callbackTable, result, event, tag)
+    if callbackTable[event] then
+        for fn, v in next, callbackTable[event] do
             if not tag or v == tag then
                 tinsert(result, fn)
             end

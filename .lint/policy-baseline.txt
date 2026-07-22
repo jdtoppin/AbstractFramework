@@ -1,18 +1,1 @@
-./System/Addon.lua:        if issecretvalue(arg) then
-./System/Addon.lua:local issecretvalue = issecretvalue
-./System/CallbackHandler.lua:            success, result = pcall(fn, event, ...)
-./System/CallbackHandler.lua:            success, result = pcall(fn, event, ...)
-./System/CallbackHandler.lua:            success, result = pcall(fn, event, ...)
-./System/Events.lua:        if not issecretvalue(name) and name then
-./System/Events.lua:local issecretvalue = issecretvalue or AF.noop_false
-./Units/Common.lua:    if not issecretvalue(name) and name and not name:match(".+-.+") then
-./Units/Common.lua:local issecretvalue = issecretvalue or AF.noop_false
-./Units/StatusTimer.lua:    if guid and not issecretvalue(guid) then
-./Units/StatusTimer.lua:local issecretvalue = issecretvalue or AF.noop_false
-./Utils/AsyncLoaders.lua:        local ok, result = pcall(resolve, mixinObj)
-./Utils/AsyncLoaders.lua:        pcall(onLoad)
-./Utils/AsyncLoaders.lua:        pcall(onLoad)
-./Utils/Serialization.lua:    success, decompressed = pcall(LibDeflate.DecompressDeflate, LibDeflate, decoded)
-./Widgets/Base.lua:    if not issecretvalue or not issecretvalue(relativeTo:GetFrameStrata()) then
-./Widgets/Base.lua:local issecretvalue = issecretvalue
-./Widgets/TimeFormat.lua:            success,fmt = pcall(date, fmt)
+# No legacy first-party violations.

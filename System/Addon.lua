@@ -1,5 +1,6 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
+local F = AF.funcs
 
 AF.REGISTERED_ADDONS = {}
 
@@ -118,25 +119,20 @@ end
 ---------------------------------------------------------------------
 -- secret shits
 ---------------------------------------------------------------------
----@type fun(value:any):boolean
-local issecretvalue = issecretvalue
-local COLON, ARROW
+local COLON
 
 function AF.PrintIsSecret(...)
     if not COLON then
         COLON = AF.WrapTextInColor(": ", "darkgray")
-        ARROW = AF.WrapTextInColor(" -> ", "darkgray")
     end
 
     print("-- " .. GetTime() .. " ---------------")
     for i = 1, select("#", ...) do
         local arg = select(i, ...)
-        if issecretvalue(arg) then
-            arg = AF.WrapTextInColor(tostring(arg), "lightred")
-        else
+        if F.isValueNonSecret(arg) then
             arg = AF.WrapTextInColor(tostring(arg), "softlime")
+            print(i .. COLON .. arg)
         end
-        print(i .. COLON .. arg)
     end
 end
 

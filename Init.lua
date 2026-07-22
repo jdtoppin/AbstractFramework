@@ -9,6 +9,23 @@ AF.noop_true = function() return true end
 AF.noop_false = function() return false end
 
 ---------------------------------------------------------------------
+-- shared functions
+---------------------------------------------------------------------
+AF.funcs = {}
+local F = AF.funcs
+
+-- This is the only first-party location that accesses the native predicate.
+-- Consumers must use F.isValueNonSecret so secret values are never inspected.
+local secretPredicate = _G.issecretvalue
+if secretPredicate then
+    function F.isValueNonSecret(value)
+        return not secretPredicate(value)
+    end
+else
+    F.isValueNonSecret = AF.noop_true
+end
+
+---------------------------------------------------------------------
 -- libs
 ---------------------------------------------------------------------
 AF.Libs = {}
