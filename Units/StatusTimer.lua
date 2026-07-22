@@ -1,9 +1,9 @@
 ---@class AbstractFramework
 local AF = _G.AbstractFramework
+local F = AF.funcs
 
 local GetTime = GetTime
 local NewTicker = C_Timer.NewTicker
-local issecretvalue = issecretvalue or AF.noop_false
 
 ---------------------------------------------------------------------
 -- local
@@ -76,7 +76,7 @@ function AF_StatusTimerMixin:SetCallback(func)
 end
 
 function AF_StatusTimerMixin:SetTimerGUID(guid)
-    if guid and not issecretvalue(guid) then
+    if guid and F.isValueNonSecret(guid) then
         self._timerGUID = guid
     end
 end

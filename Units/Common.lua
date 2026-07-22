@@ -1,9 +1,8 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
+local F = AF.funcs
 
-local issecretvalue = issecretvalue or AF.noop_false
 local strfind = strfind
-local strlower = strlower
 local bitband = bit.band
 local GetNumGroupMembers = GetNumGroupMembers
 local GetRaidRosterInfo = GetRaidRosterInfo
@@ -16,7 +15,6 @@ local UnitInPartyIsAI = UnitInPartyIsAI or AF.noop
 local UnitPlayerOrPetInParty = UnitPlayerOrPetInParty
 local UnitPlayerOrPetInRaid = UnitPlayerOrPetInRaid
 local UnitIsPlayer = UnitIsPlayer
-local UnitInPartyIsAI = UnitInPartyIsAI
 local UnitName = UnitName
 local GetUnitName = GetUnitName
 local GetNormalizedRealmName = GetNormalizedRealmName
@@ -43,7 +41,7 @@ local UnitFactionGroup = UnitFactionGroup
 function AF.GetNumSubgroupMembers(group)
     local n = 0
     for i = 1, GetNumGroupMembers() do
-        local name, _, subgroup = GetRaidRosterInfo(i)
+        local _, _, subgroup = GetRaidRosterInfo(i)
         if subgroup == group then
             n = n + 1
         end
@@ -57,7 +55,7 @@ function AF.GetUnitsInSubGroup(group)
     local units = {}
     for i = 1, GetNumGroupMembers() do
         -- name, rank, subgroup, level, class, fileName, zone, online, isDead, role, isML, combatRole = GetRaidRosterInfo(raidIndex)
-        local name, _, subgroup = GetRaidRosterInfo(i)
+        local _, _, subgroup = GetRaidRosterInfo(i)
         if subgroup == group then
             tinsert(units, "raid" .. i)
         end
@@ -354,7 +352,7 @@ function AF.UnitFullName(unit)
     name = GetUnitName(unit, true)
 
     --? name might be nil in some cases?
-    if not issecretvalue(name) and name and not name:match(".+-.+") then
+    if name and F.isValueNonSecret(name) and not name:match(".+-.+") then
         local server = GetNormalizedRealmName()
         --? server might be nil in some cases?
         if server then

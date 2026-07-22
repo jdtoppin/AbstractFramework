@@ -1,5 +1,6 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
+local F = AF.funcs
 
 ---------------------------------------------------------------------
 -- login
@@ -11,8 +12,6 @@ AF:RegisterEvent("PLAYER_LOGIN", AF.GetFireFunc("AF_PLAYER_LOGIN"))
 ---------------------------------------------------------------------
 local GetInstanceInfo = GetInstanceInfo
 local IsInInstance = IsInInstance
-local IsDelveInProgress = C_PartyInfo.IsDelveInProgress
-local IsDelveComplete = C_PartyInfo.IsDelveComplete
 local wasInInstance = nil
 
 --* AF_INSTANCE_STATE_CHANGE / AF_INSTANCE_ENTER / AF_INSTANCE_LEAVE
@@ -30,9 +29,8 @@ setmetatable(instanceInfo, {
 })
 
 local function CheckInstanceStatus()
-    local isIn, iType = IsInInstance()
-
-    local name, instanceType, difficultyID, difficultyName, maxPlayers, dynamicDifficulty, isDynamic, instanceID, instanceGroupSize, LfgDungeonID = GetInstanceInfo()
+    local name, _, difficultyID, difficultyName, maxPlayers, dynamicDifficulty, isDynamic, instanceID, instanceGroupSize, LfgDungeonID = GetInstanceInfo()
+    local isIn, iType
 
     -- if IsDelveInProgress() or IsDelveComplete() then
     if difficultyID == 208 then -- https://warcraft.wiki.gg/wiki/DifficultyID
@@ -52,7 +50,7 @@ local function CheckInstanceStatus()
     instanceInfo.dynamicDifficulty = dynamicDifficulty
     instanceInfo.isDynamic = isDynamic
     instanceInfo.instanceID = instanceID
-    instanceInfo.instanceGroupSize = instanceGroupSizew
+    instanceInfo.instanceGroupSize = instanceGroupSize
     instanceInfo.LfgDungeonID = LfgDungeonID
 
     if isIn ~= wasInInstance then
@@ -106,7 +104,6 @@ AF:RegisterEvent("PLAYER_REGEN_ENABLED", AF.GetFireFunc("AF_COMBAT_LEAVE"))
 ---------------------------------------------------------------------
 -- group
 ---------------------------------------------------------------------
-local issecretvalue = issecretvalue or AF.noop_false
 local IsInRaid = IsInRaid
 local IsInGroup = IsInGroup
 local GetNumGroupMembers = GetNumGroupMembers
@@ -153,7 +150,7 @@ local function AF_GROUP_UPDATE(_, event)
     -- build name to unit token map
     for unit in IterateGroupPlayers() do
         local name = GetUnitName(unit, true)
-        if not issecretvalue(name) and name then
+        if name and F.isValueNonSecret(name) then
             nameToToken[name] = unit
             if not name:match(".+-.+") then
                 nameToToken[name .. "-" .. AF.player.normalizedRealm] = unit

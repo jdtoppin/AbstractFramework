@@ -7,17 +7,19 @@ not be edited merely to make it conform.
 
 - The combat-capable secret-safe path is the only implementation path. Do not
   divide behavior into secret and non-secret branches.
-- Never use `pcall` or `xpcall` in first-party code. An API failure is not a
-  secret-value test and must not be used as control flow.
+- Never use `pcall` or `xpcall` to probe secret values, bypass an API contract,
+  or create a separate combat path. They may remain for necessary non-secret
+  error isolation when removing them would change established behavior; new
+  uses require a documented reason and must not receive secret values.
 - Pass secret values only to Blizzard C-level APIs whose exact Retail contract
   explicitly accepts secret values. Never pass them to Lua operations or APIs
   without that contract.
 - Never inspect, compare, concatenate, index, serialize, log, format, or replace
   a secret value with placeholder text.
-- Never call or alias bare `issecretvalue`. First-party code calls only
-  `F.isValueNonSecret(value)`. Its canonical implementation belongs in the
-  shared AbstractFramework layer and BFInfinite must expose/delegate to that
-  implementation; do not reinvent it per file.
+- Never call or alias bare `issecretvalue` outside the one canonical
+  `F.isValueNonSecret(value)` implementation in AbstractFramework. All other
+  first-party code calls the wrapper, and BFInfinite delegates to it; do not
+  reinvent it per file.
 - Prefer facts derived from non-secret inputs. For example, derive `isHarmful`
   from the caller's filter string when that is authoritative, rather than from
   a possibly secret aura field.

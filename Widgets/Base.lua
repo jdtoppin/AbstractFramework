@@ -1,7 +1,6 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
-
-local issecretvalue = issecretvalue
+local F = AF.funcs
 
 ---------------------------------------------------------------------
 -- function
@@ -392,8 +391,9 @@ end
 function AF.SetFrameLevel(frame, level, relativeTo)
     level = level or 0
     relativeTo = relativeTo or frame:GetParent()
-    if not issecretvalue or not issecretvalue(relativeTo:GetFrameStrata()) then
-        frame:SetFrameStrata(relativeTo:GetFrameStrata())
+    local frameStrata = relativeTo:GetFrameStrata()
+    if F.isValueNonSecret(frameStrata) then
+        frame:SetFrameStrata(frameStrata)
     end
     frame:SetFrameLevel(AF.Clamp(relativeTo:GetFrameLevel() + level, 0, 10000))
 end
