@@ -139,11 +139,12 @@ System\Events.lua
 
 # secret widgets
 # Widgets_UnitFrames\AuraCooldown.xml
-# Widgets_UnitFrames\Aura.lua
-# Widgets_UnitFrames\SecretHealthBar.lua [AllowLoadGameType mainline]
-# Widgets_UnitFrames\SecretPowerBar.lua [AllowLoadGameType mainline]
-# Widgets_UnitFrames\SecretCastBar.lua [AllowLoadGameType mainline]
-# Widgets_UnitFrames\SecretNameText.lua [AllowLoadGameType mainline]
+Widgets_UnitFrames\Aura.lua [AllowLoadGameType mainline]
+Widgets_UnitFrames\SecretStatusBar.lua [AllowLoadGameType mainline]
+Widgets_UnitFrames\SecretHealthBar.lua [AllowLoadGameType mainline]
+Widgets_UnitFrames\SecretPowerBar.lua [AllowLoadGameType mainline]
+Widgets_UnitFrames\SecretCastBar.lua [AllowLoadGameType mainline]
+Widgets_UnitFrames\SecretNameText.lua [AllowLoadGameType mainline]
 # Widgets_UnitFrames\SecretHealthText.lua [AllowLoadGameType mainline]
 # Widgets_UnitFrames\SecretPowerText.lua [AllowLoadGameType mainline]
 
