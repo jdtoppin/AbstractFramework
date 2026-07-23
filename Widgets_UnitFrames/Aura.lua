@@ -41,6 +41,26 @@ function AF.GetAuraDispelColorCurve()
     return curve
 end
 
+local function SetupAuraCooldownStyle(icon, cooldown, style)
+    cooldown:SetShown(style ~= "none")
+    cooldown:SetDrawEdge(style:find("edge$") ~= nil)
+    icon:SetShown(style:find("^block") == nil)
+end
+
+local function SetupAuraDurationText(durationText, config)
+    durationText:SetShown(config.enabled)
+    AF.SetFont(durationText, unpack(config.font))
+    AF.LoadTextPosition(durationText, config.position)
+    durationText:SetTextColor(AF.UnpackColor(config.color.normal))
+end
+
+local function SetupAuraStackText(stackText, config)
+    stackText:SetShown(config.enabled)
+    AF.SetFont(stackText, unpack(config.font))
+    AF.LoadTextPosition(stackText, config.position)
+    stackText:SetTextColor(AF.UnpackColor(config.color))
+end
+
 ---@class AF_SecretAura:Button
 local AF_SecretAuraMixin = {}
 
@@ -117,23 +137,15 @@ end
 
 function AF_SecretAuraMixin:SetCooldownStyle(style)
     self.cooldownStyle = style
-    self.cooldown:SetShown(style ~= "none")
-    self.cooldown:SetDrawEdge(style:find("edge$") ~= nil)
-    self.icon:SetShown(style:find("^block") == nil)
+    SetupAuraCooldownStyle(self.icon, self.cooldown, style)
 end
 
 function AF_SecretAuraMixin:SetupDurationText(config)
-    self.durationText:SetShown(config.enabled)
-    AF.SetFont(self.durationText, unpack(config.font))
-    AF.LoadTextPosition(self.durationText, config.position)
-    self.durationText:SetTextColor(AF.UnpackColor(config.color.normal))
+    SetupAuraDurationText(self.durationText, config)
 end
 
 function AF_SecretAuraMixin:SetupStackText(config)
-    self.stackText:SetShown(config.enabled)
-    AF.SetFont(self.stackText, unpack(config.font))
-    AF.LoadTextPosition(self.stackText, config.position)
-    self.stackText:SetTextColor(AF.UnpackColor(config.color))
+    SetupAuraStackText(self.stackText, config)
 end
 
 function AF_SecretAuraMixin:EnableTooltip(config)
@@ -229,6 +241,149 @@ end
 ---@return AF_SecretAura aura
 function AF.CreateAura(parent, noBorder)
     return AF.InitAura(CreateFrame("Button", nil, parent), noBorder)
+end
+
+---------------------------------------------------------------------
+-- Retail 12.1 custom aura containers
+---------------------------------------------------------------------
+-- Retail 12.1.0.68824 (wow-ui-source fa38386c) replaces Retail's
+-- SecureAuraHeaderTemplate with externally-instantiable AuraContainer and
+-- CustomAuraButton intrinsics. The exported tables are a stable capability
+-- check and avoid probing frame creation through error handling.
+AF.hasCustomAuraContainer = _G.C_AuraContainerUtil ~= nil
+    and _G.AuraContainerSortMethod ~= nil
+    and _G.CustomAuraContainerLayoutDefaults ~= nil
+    and _G.AuraContainerInbound ~= nil
+
+local function InitializeCustomAuraButton(button, style)
+    if not style.noBorder then
+        -- BackdropTemplate has an OnSizeChanged Lua layout path. Custom aura
+        -- geometry may be secret, so use scriptless child textures instead.
+        local border = button:CreateTexture(nil, "BACKGROUND", nil, -8)
+        border:SetAllPoints()
+        border:SetColorTexture(unpack(style.backdropBorderColor))
+
+        local background = button:CreateTexture(nil, "BACKGROUND", nil, -7)
+        AF.SetInside(background, button, 1)
+        background:SetColorTexture(unpack(style.backdropBackgroundColor))
+    end
+
+    if style.width and style.height then
+        AF.SetSize(button, style.width, style.height)
+    end
+
+    local icon = button:CreateTexture(nil, "ARTWORK")
+    if style.iconInset then
+        AF.SetInside(icon, button, style.iconInset)
+    else
+        icon:SetAllPoints()
+    end
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    if style.desaturated ~= nil then
+        icon:SetDesaturated(style.desaturated)
+    end
+
+    local cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+    cooldown:SetAllPoints()
+    cooldown:SetDrawBling(false)
+    cooldown:SetDrawEdge(false)
+    cooldown:SetUseAuraDisplayTime(true)
+    if style.cooldownStyle then
+        SetupAuraCooldownStyle(icon, cooldown, style.cooldownStyle)
+    end
+
+    local durationText
+    if style.durationText then
+        durationText = button:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
+        SetupAuraDurationText(durationText, style.durationText)
+    end
+
+    local stackText
+    if style.stackText then
+        stackText = button:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
+        SetupAuraStackText(stackText, style.stackText)
+    end
+
+    local dispelOverlay
+    if style.dispelColor then
+        dispelOverlay = button:CreateTexture(nil, "OVERLAY")
+        dispelOverlay:SetAllPoints()
+        dispelOverlay:SetTexture([[Interface\Buttons\UI-Debuff-Overlays]])
+        dispelOverlay:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
+        dispelOverlay:Hide()
+    end
+
+    -- Blizzard applies DenyTaintedAccessWhenAurasAreSecret immediately after
+    -- this initializer. Fully configure regions before attaching them, then
+    -- leave the live button opaque to addon code.
+    button:SetIcon(icon)
+    button:SetDurationCooldown(cooldown)
+    if durationText then
+        button:SetDurationText(durationText, {
+            formatter = durationFormatter,
+            expiredText = "0.0",
+            zeroDurationText = "",
+            updateInterval = 0,
+        })
+    end
+    if stackText then
+        button:SetApplicationCount(stackText)
+    end
+    if dispelOverlay then
+        button:SetAuraBorder(dispelOverlay, {
+            style = Enum.CustomAuraButtonBorderStyle.Color,
+            showWhenHarmful = true,
+            showWhenHelpful = false,
+            showWithoutDispelType = false,
+            customDispelColorCurve = style.dispelColorCurve or AF.GetAuraDispelColorCurve(),
+        })
+    end
+    if style.cancelAuraButtons then
+        button:SetCancelAuraButtons(style.cancelAuraButtons)
+    end
+end
+
+---@return boolean
+function AF.HasCustomAuraContainer()
+    return AF.hasCustomAuraContainer
+end
+
+---@return Frame container
+function AF.CreateCustomAuraContainer(parent, name, unit, roleset)
+    assert(AF.hasCustomAuraContainer, "CustomAuraContainerTemplate is unavailable")
+
+    local container = CreateFrame("AuraContainer", name, parent, "CustomAuraContainerTemplate")
+    if roleset then
+        -- SetRolesets is protected in 12.1; set it once during construction.
+        container:SetRolesets(roleset)
+    end
+    if unit then
+        container:SetUnit(unit)
+    end
+    return container
+end
+
+function AF.AddCustomAuraGroup(container, groupKey, filterString, groupOptions, buttonStyle)
+    assert(AF.hasCustomAuraContainer, "CustomAuraContainerTemplate is unavailable")
+
+    local options = AF.Copy(groupOptions or {})
+    local style = AF.Copy(buttonStyle or {})
+    assert(options.initializeFrame == nil, "initializeFrame is managed by AbstractFramework")
+    assert(options.templateNames == nil, "templateNames are managed by AbstractFramework")
+
+    if not style.noBorder then
+        style.backdropBorderColor = style.backdropBorderColor or {AF.GetColorRGB("border")}
+        style.backdropBackgroundColor = style.backdropBackgroundColor or {AF.GetColorRGB("background")}
+    end
+    if style.dispelColor and not style.dispelColorCurve then
+        style.dispelColorCurve = AF.GetAuraDispelColorCurve()
+    end
+
+    options.initializeFrame = function(button)
+        InitializeCustomAuraButton(button, style)
+    end
+
+    container:AddAuraGroup(groupKey, filterString, options)
 end
 
 ---@class AF_SecretAuraList:Frame
