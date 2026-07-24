@@ -109,11 +109,16 @@ end
 ---------------------------------------------------------------------
 -- circular icon helpers
 ---------------------------------------------------------------------
+---@param mask MaskTexture
+function AF.ApplyCircularIconMask(mask)
+    mask:SetTexture(AF.GetTexture("Circle_IconMask"), "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+end
+
 ---@param texture Texture
 ---@return MaskTexture mask
 function AF.CreateCircularMask(texture)
     local mask = texture:GetParent():CreateMaskTexture()
-    mask:SetTexture(AF.GetTexture("Circle"), "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    AF.ApplyCircularIconMask(mask)
     mask:SetAllPoints(texture)
     texture:AddMaskTexture(mask)
     return mask
