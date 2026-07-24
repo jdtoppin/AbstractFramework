@@ -138,15 +138,16 @@ end
 ---@param parent Frame
 ---@param relativeTo Region|nil defaults to parent
 ---@param color table|string|nil defaults to "border"
----@param drawLayer DrawLayer|nil defaults to "OVERLAY"
+---@param drawLayer DrawLayer|nil defaults to "BACKGROUND"
 ---@param subLevel number|nil
 ---@return AF_Texture border
 function AF.CreateCircularIconBorder(parent, relativeTo, color, drawLayer, subLevel)
     relativeTo = relativeTo or parent
     local isSmall = IsSmallCircularIcon(relativeTo)
     local texture = isSmall and "Circle_Thin_36" or "Circle_Thin"
+    -- The asset is a solid circle drawn behind the inset icon mask, exposing a smooth thin rim.
     local border = AF.CreateTexture(
-        parent, AF.GetIcon(texture), color or "border", drawLayer or "OVERLAY", subLevel, nil, nil, "LINEAR")
+        parent, AF.GetIcon(texture), color or "border", drawLayer or "BACKGROUND", subLevel, nil, nil, "LINEAR")
     border:SetAllPoints(relativeTo)
     return border
 end
