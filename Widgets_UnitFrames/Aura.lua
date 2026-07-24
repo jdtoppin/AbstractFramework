@@ -287,14 +287,57 @@ end
 ---------------------------------------------------------------------
 -- Retail 12.1 custom aura containers
 ---------------------------------------------------------------------
--- Retail 12.1.0.68824 (wow-ui-source fa38386c) replaces Retail's
+-- Retail 12.1.0.68914 (wow-ui-source d3915c78) replaces Retail's
 -- SecureAuraHeaderTemplate with externally-instantiable AuraContainer and
--- CustomAuraButton intrinsics. The exported tables are a stable capability
--- check and avoid probing frame creation through error handling.
+-- CustomAuraButton intrinsics. Check the current exported schema rather than
+-- probing protected frame creation or accepting the incompatible 68824 API.
+local customAuraContainerLayoutDefaults = _G.CustomAuraContainerLayoutDefaults
+local customAuraGroupDefaults = _G.CustomAuraContainerGroupDefaultOptions
+local customAuraGroupLayoutDefaults = _G.CustomAuraContainerGroupLayoutDefaultOptions
+local customAuraSlotDefaults = _G.CustomAuraContainerSlotDefaultOptions
+local customItemEnchantmentDefaults = _G.CustomAuraContainerItemEnchantmentDefaultOptions
+local customItemEnchantmentLayoutDefaults = _G.CustomAuraContainerItemEnchantmentLayoutDefaultOptions
+local customDispelTypeTextureStyle = _G.Enum and Enum.CustomAuraButtonDispelTypeTextureStyle
+
 AF.hasCustomAuraContainer = _G.C_AuraContainerUtil ~= nil
+    and C_AuraContainerUtil.ProcessCustomAuraButtonApplicationCountOptions ~= nil
+    and C_AuraContainerUtil.ProcessCustomAuraButtonDispelTypeTextureOptions ~= nil
+    and C_AuraContainerUtil.ProcessCustomAuraButtonDurationTextOptions ~= nil
     and _G.AuraContainerSortMethod ~= nil
-    and _G.CustomAuraContainerLayoutDefaults ~= nil
+    and _G.AuraContainerSortDirection ~= nil
     and _G.AuraContainerInbound ~= nil
+    and _G.AuraContainerItemEnchantmentSlot ~= nil
+    and _G.AuraContainerItemEnchantmentSortMethod ~= nil
+    and _G.CustomAuraContainerAuraProcessingPolicy ~= nil
+    and _G.CustomAuraContainerItemEnchantmentPlacement ~= nil
+    and customAuraContainerLayoutDefaults ~= nil
+    and customAuraContainerLayoutDefaults.axis ~= nil
+    and customAuraContainerLayoutDefaults.maximumLineSize ~= nil
+    and customAuraGroupDefaults ~= nil
+    and customAuraGroupLayoutDefaults ~= nil
+    and customAuraGroupLayoutDefaults.elementSpacing ~= nil
+    and customAuraGroupLayoutDefaults.forceNewLine ~= nil
+    and customAuraSlotDefaults ~= nil
+    and customItemEnchantmentDefaults ~= nil
+    and customItemEnchantmentLayoutDefaults ~= nil
+    and _G.AnchorUtil ~= nil
+    and AnchorUtil.FlowLayoutAxis ~= nil
+    and AnchorUtil.FlowDirection ~= nil
+    and customDispelTypeTextureStyle ~= nil
+    and customDispelTypeTextureStyle.PreserveAsset ~= nil
+
+local function AssertCustomAuraContainer()
+    assert(AF.hasCustomAuraContainer, "12.1 CustomAuraContainerTemplate is unavailable")
+end
+
+local function CreateCustomAuraDurationTextBinding()
+    local binding = C_DurationUtil.CreateDurationTextBinding()
+    binding:SetFormatter(durationFormatter)
+    binding:SetExpiredText("0.0")
+    binding:SetZeroDurationText("")
+    binding:SetUpdateInterval(0)
+    return binding
+end
 
 local function InitializeCustomAuraButton(button, style)
     if not style.noBorder then
@@ -361,23 +404,33 @@ local function InitializeCustomAuraButton(button, style)
     button:SetDurationCooldown(cooldown)
     if durationText then
         button:SetDurationText(durationText, {
-            formatter = durationFormatter,
-            expiredText = "0.0",
-            zeroDurationText = "",
-            updateInterval = 0,
+            binding = CreateCustomAuraDurationTextBinding(),
         })
     end
     if stackText then
         button:SetApplicationCount(stackText)
     end
     if dispelOverlay then
-        button:SetAuraBorder(dispelOverlay, {
-            style = Enum.CustomAuraButtonBorderStyle.Color,
+        button:AddDispelTypeTexture(dispelOverlay, {
+            style = customDispelTypeTextureStyle.PreserveAsset,
             showWhenHarmful = true,
             showWhenHelpful = false,
             showWithoutDispelType = false,
             customDispelColorCurve = style.dispelColorCurve or AF.GetAuraDispelColorCurve(),
         })
+    end
+    if style.tooltip then
+        button:EnableMouse(style.tooltip.enabled)
+        if style.tooltip.anchorPoint then
+            button:SetTooltipAnchorPoint(
+                style.tooltip.anchorPoint,
+                style.tooltip.offsetX,
+                style.tooltip.offsetY
+            )
+        end
+        if style.tooltip.hideInCombat ~= nil then
+            button:SetHideTooltipInCombat(style.tooltip.hideInCombat)
+        end
     end
     if style.cancelAuraButtons then
         button:SetCancelAuraButtons(style.cancelAuraButtons)
@@ -389,6 +442,11 @@ local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle)
     local style = AF.Copy(buttonStyle or {})
     assert(options.initializeFrame == nil, "initializeFrame is managed by AbstractFramework")
     assert(options.templateNames == nil, "templateNames are managed by AbstractFramework")
+    if style.tooltip then
+        assert(type(style.tooltip.enabled) == "boolean", "tooltip.enabled must be a boolean")
+        assert(style.tooltip.enabled or not style.cancelAuraButtons,
+            "cancelAuraButtons requires mouse-enabled tooltips")
+    end
 
     if not style.noBorder then
         style.backdropBorderColor = style.backdropBorderColor or {AF.GetColorRGB("border")}
@@ -410,32 +468,127 @@ function AF.HasCustomAuraContainer()
 end
 
 ---@return Frame container
-function AF.CreateCustomAuraContainer(parent, name, unit, roleset)
-    assert(AF.hasCustomAuraContainer, "CustomAuraContainerTemplate is unavailable")
+function AF.CreateCustomAuraContainer(parent, name, unit)
+    AssertCustomAuraContainer()
 
     local container = CreateFrame("AuraContainer", name, parent, "CustomAuraContainerTemplate")
-    if roleset then
-        -- SetRolesets is protected in 12.1; set it once during construction.
-        container:SetRolesets(roleset)
-    end
-    if unit then
+    container:SetSize(1, 1)
+    if unit ~= nil then
         container:SetUnit(unit)
     end
     return container
 end
 
+function AF.SetCustomAuraContainerFlowLayout(container, layoutOptions)
+    AssertCustomAuraContainer()
+
+    local layout = AF.Copy(customAuraContainerLayoutDefaults, layoutOptions or {})
+    container:SetFlowLayoutAxis(layout.axis)
+    container:SetFlowLayoutAnchorPoint(layout.anchorPoint)
+    container:SetFlowLayoutGrowthDirection(layout.horizontalGrowthDirection, layout.verticalGrowthDirection)
+    container:SetFlowLayoutPadding(layout.paddingLeft, layout.paddingRight, layout.paddingTop, layout.paddingBottom)
+    container:SetFlowLayoutMaximumLineSize(layout.maximumLineSize)
+end
+
+function AF.ResetCustomAuraContainerFlowLayout(container)
+    AssertCustomAuraContainer()
+    container:ResetFlowLayoutOptions()
+end
+
+function AF.SetCustomAuraContainerUnit(container, unit)
+    AssertCustomAuraContainer()
+    container:SetUnit(unit)
+end
+
+function AF.SetCustomAuraContainerEnabled(container, enabled)
+    AssertCustomAuraContainer()
+    container:SetEnabled(enabled)
+end
+
+function AF.UpdateCustomAuraContainer(container)
+    AssertCustomAuraContainer()
+    container:UpdateAllAuras()
+end
+
+function AF.SetCustomAuraContainerProcessingPolicy(container, processingPolicy, options)
+    AssertCustomAuraContainer()
+    container:SetAuraProcessingPolicy(processingPolicy, options)
+end
+
 function AF.AddCustomAuraGroup(container, groupKey, filterString, groupOptions, buttonStyle)
-    assert(AF.hasCustomAuraContainer, "CustomAuraContainerTemplate is unavailable")
+    AssertCustomAuraContainer()
 
     local options = GetCustomAuraButtonOptions(groupOptions, buttonStyle)
     container:AddAuraGroup(groupKey, filterString, options)
 end
 
+function AF.SetCustomAuraGroupFilterString(container, groupKey, filterString)
+    AssertCustomAuraContainer()
+    container:SetAuraGroupFilterString(groupKey, filterString)
+end
+
+function AF.SetCustomAuraGroupMaxFrameCount(container, groupKey, maxFrameCount)
+    AssertCustomAuraContainer()
+    container:SetAuraGroupMaxFrameCount(groupKey, maxFrameCount)
+end
+
+function AF.SetCustomAuraGroupCandidateFilters(container, groupKey, candidateFilters)
+    AssertCustomAuraContainer()
+    container:SetAuraGroupCandidateFilters(groupKey, candidateFilters)
+end
+
+function AF.SetCustomAuraGroupSortMethod(container, groupKey, sortMethod, sortDirection)
+    AssertCustomAuraContainer()
+    container:SetAuraGroupSortMethod(groupKey, sortMethod, sortDirection)
+end
+
+function AF.SetCustomAuraGroupLayout(container, groupKey, layoutOptions)
+    AssertCustomAuraContainer()
+    container:SetAuraGroupLayout(groupKey, layoutOptions)
+end
+
+function AF.AddCustomAuraSlot(container, slotKey, filterString, slotOptions, buttonStyle)
+    AssertCustomAuraContainer()
+
+    local options = GetCustomAuraButtonOptions(slotOptions, buttonStyle)
+    return container:AddAuraSlot(slotKey, filterString, options)
+end
+
+function AF.SetCustomAuraSlotFilterString(container, slotKey, filterString)
+    AssertCustomAuraContainer()
+    container:SetAuraSlotFilterString(slotKey, filterString)
+end
+
+function AF.SetCustomAuraSlotCandidateFilters(container, slotKey, candidateFilters)
+    AssertCustomAuraContainer()
+    container:SetAuraSlotCandidateFilters(slotKey, candidateFilters)
+end
+
+function AF.SetCustomAuraSlotSortMethod(container, slotKey, sortMethod, sortDirection)
+    AssertCustomAuraContainer()
+    container:SetAuraSlotSortMethod(slotKey, sortMethod, sortDirection)
+end
+
 function AF.AddCustomItemEnchantment(container, itemEnchantmentSlot, enchantmentOptions, buttonStyle)
-    assert(AF.hasCustomAuraContainer, "CustomAuraContainerTemplate is unavailable")
+    AssertCustomAuraContainer()
 
     local options = GetCustomAuraButtonOptions(enchantmentOptions, buttonStyle)
-    container:AddItemEnchantment(itemEnchantmentSlot, options)
+    return container:AddItemEnchantment(itemEnchantmentSlot, options)
+end
+
+function AF.SetCustomItemEnchantmentSortMethod(container, sortMethod, sortDirection)
+    AssertCustomAuraContainer()
+    container:SetItemEnchantmentSortMethod(sortMethod, sortDirection)
+end
+
+function AF.SetCustomItemEnchantmentLayout(container, layoutOptions)
+    AssertCustomAuraContainer()
+    container:SetItemEnchantmentLayout(layoutOptions)
+end
+
+function AF.ResetCustomItemEnchantmentLayout(container)
+    AssertCustomAuraContainer()
+    container:ResetItemEnchantmentLayout()
 end
 
 ---@class AF_SecretAuraList:Frame
