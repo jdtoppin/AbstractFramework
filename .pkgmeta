@@ -16,6 +16,7 @@ externals:
     commit: default
 
 ignore:
+  - tests
   - Libs/LibStub/tests
   - Libs/LibStub/LibStub.toc
   - Libs/LibDeflate/docs
