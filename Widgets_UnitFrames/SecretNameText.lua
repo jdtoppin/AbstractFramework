@@ -2,8 +2,9 @@
 local AF = select(2, ...)
 
 local UnitClassBase = UnitClassBase
-local UnitIsConnected = UnitIsConnected
+local UnitIsCharmed = UnitIsCharmed
 local UnitName = UnitName
+local UnitSelectionColor = UnitSelectionColor
 
 ---@class AF_SecretNameText:AF_FontString
 local AF_SecretNameTextMixin = {}
@@ -12,18 +13,26 @@ function AF_SecretNameTextMixin:UpdateColor()
     if not self.color or not self.unit then return end
 
     local r, g, b
-    if self.color.type == "class_color" then
+    if self.color.type == "selection_color" then
+        r, g, b = UnitSelectionColor(self.unit, true)
+        self:SetVertexColorFromBoolean(
+            UnitIsCharmed(self.unit),
+            CreateColor(AF.GetColorRGB("CHARMED")),
+            CreateColor(r, g, b)
+        )
+        return
+    elseif self.color.type == "class_color" then
+        -- Retained for group-frame consumers. Nameplate consumers can use
+        -- selection_color to avoid a class-identity lookup.
         if AF.UnitIsPlayer(self.unit) then
             r, g, b = AF.GetClassColor(UnitClassBase(self.unit))
         else
             r, g, b = AF.GetReactionColor(self.unit)
         end
-    elseif AF.UnitIsPlayer(self.unit) and not UnitIsConnected(self.unit) then
-        r, g, b = AF.GetClassColor(UnitClassBase(self.unit))
     else
         r, g, b = AF.UnpackColor(self.color.rgb)
     end
-    self:SetTextColor(r, g, b)
+    self:SetVertexColor(r, g, b)
 end
 
 function AF_SecretNameTextMixin:UpdateName()
@@ -54,7 +63,9 @@ end
 function AF_SecretNameTextMixin:ClearUnit()
     self.eventFrame:UnregisterAllEvents()
     self.unit = nil
-    self:SetText(nil)
+    -- Retail 12.0.7 (wow-ui-source 4383ced) and 12.1
+    -- (d3915c7): ClearText removes the Text secret aspect.
+    self:ClearText()
 end
 
 local function OnEvent(self)

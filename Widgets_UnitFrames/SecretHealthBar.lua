@@ -10,6 +10,16 @@ local UnitIsCharmed = UnitIsCharmed
 local UnitIsConnected = UnitIsConnected
 local UnitIsTapDenied = UnitIsTapDenied
 local UnitPlayerControlled = UnitPlayerControlled
+local UnitSelectionColor = UnitSelectionColor
+
+local function SetVertexColorWithCharm(texture, unit, r, g, b, a)
+    local charmedR, charmedG, charmedB = AF.GetColorRGB("CHARMED")
+    texture:SetVertexColorFromBoolean(
+        UnitIsCharmed(unit),
+        CreateColor(charmedR, charmedG, charmedB, a),
+        CreateColor(r, g, b, a)
+    )
+end
 
 local function SetConfiguredColor(bar, texture, config, skipTapDeniedCheck)
     if not config then return end
@@ -17,13 +27,19 @@ local function SetConfiguredColor(bar, texture, config, skipTapDeniedCheck)
     local unit = bar.unit
     local colorType = config.type
     local factor = colorType and colorType:find("_dark$") and 0.2 or 1
+    local alpha = type(config.alpha) == "number" and config.alpha or 1
     local r, g, b
 
-    if AF.UnitIsPlayer(unit) then
+    if colorType and colorType:find("^selection") then
+        r, g, b = UnitSelectionColor(unit, true)
+        if factor ~= 1 then
+            r, g, b = AF.ScaleColor(r, g, b, factor)
+        end
+        SetVertexColorWithCharm(texture, unit, r, g, b, alpha)
+        return r, g, b
+    elseif AF.UnitIsPlayer(unit) then
         if not UnitIsConnected(unit) then
             r, g, b = AF.GetColorRGB("OFFLINE")
-        elseif UnitIsCharmed(unit) then
-            r, g, b = AF.GetColorRGB("CHARMED")
         elseif colorType and colorType:find("^class") then
             if UnitHasVehicleUI(unit) then
                 r, g, b = AF.GetColorRGB("FRIENDLY", nil, factor)
@@ -52,7 +68,9 @@ local function SetConfiguredColor(bar, texture, config, skipTapDeniedCheck)
         end
     end
 
-    texture:SetVertexColor(r, g, b, config.alpha or 1)
+    -- Feed UnitIsCharmed directly into a secret-capable region sink so a
+    -- restricted result is never branched on in Lua.
+    SetVertexColorWithCharm(texture, unit, r, g, b, alpha)
     return r, g, b
 end
 
