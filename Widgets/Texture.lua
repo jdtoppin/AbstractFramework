@@ -109,20 +109,14 @@ end
 ---------------------------------------------------------------------
 -- circular icon helpers
 ---------------------------------------------------------------------
--- Small icons use 32 px power-of-two art optimized for 36 px icon regions.
-local CIRCULAR_ICON_SMALL_MAX_SIZE = 50
-
-local function IsSmallCircularIcon(region)
-    local width = region:GetWidth()
-    return width > 0 and width < CIRCULAR_ICON_SMALL_MAX_SIZE
-end
-
 ---@param mask MaskTexture
----@param relativeTo Region|nil defaults to mask
-function AF.ApplyCircularIconMask(mask, relativeTo)
-    local isSmall = IsSmallCircularIcon(relativeTo or mask)
-    local texture = isSmall and "Circle_IconMask_36" or "Circle_IconMask"
-    mask:SetTexture(AF.GetTexture(texture), "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE", "LINEAR")
+---@param _relativeTo Region|nil retained for API compatibility
+function AF.ApplyCircularIconMask(mask, _relativeTo)
+    mask:SetTexture(
+        AF.GetTexture("Circle_IconMask"),
+        "CLAMPTOBLACKADDITIVE",
+        "CLAMPTOBLACKADDITIVE",
+        "TRILINEAR")
 end
 
 ---@param texture Texture
@@ -143,11 +137,16 @@ end
 ---@return AF_Texture border
 function AF.CreateCircularIconBorder(parent, relativeTo, color, drawLayer, subLevel)
     relativeTo = relativeTo or parent
-    local isSmall = IsSmallCircularIcon(relativeTo)
-    local texture = isSmall and "Circle_Thin_36" or "Circle_Thin"
     -- The asset is a solid circle drawn behind the inset icon mask, exposing a smooth thin rim.
     local border = AF.CreateTexture(
-        parent, AF.GetIcon(texture), color or "border", drawLayer or "BACKGROUND", subLevel, nil, nil, "LINEAR")
+        parent,
+        AF.GetIcon("Circle_Thin"),
+        color or "border",
+        drawLayer or "BACKGROUND",
+        subLevel,
+        nil,
+        nil,
+        "TRILINEAR")
     border:SetAllPoints(relativeTo)
     return border
 end
