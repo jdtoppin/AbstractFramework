@@ -1,15 +1,123 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
+local F = AF.funcs
 
 local UnitClassBase = UnitClassBase
+local UnitClassification = UnitClassification
+local UnitEffectiveLevel = UnitEffectiveLevel
 local UnitGetDetailedHealPrediction = UnitGetDetailedHealPrediction
 local UnitHasVehicleUI = UnitHasVehicleUI
 local UnitHealth = UnitHealth
 local UnitHealthMax = UnitHealthMax
 local UnitIsCharmed = UnitIsCharmed
 local UnitIsConnected = UnitIsConnected
+local UnitIsBossMob = UnitIsBossMob
+local UnitIsLieutenant = UnitIsLieutenant
 local UnitIsTapDenied = UnitIsTapDenied
+local UnitPowerType = UnitPowerType
 local UnitPlayerControlled = UnitPlayerControlled
+local UnitSelectionColor = UnitSelectionColor
+
+local Mana = Enum.PowerType.Mana
+
+---@class AF_NameplateSemanticColor
+---@field enabled? boolean Defaults to true.
+---@field rgb number[]
+
+---@class AF_NameplateSemanticColorConfig
+---@field type "nameplate_semantic"
+---@field alpha? number Shared alpha for every semantic color.
+---@field boss? AF_NameplateSemanticColor
+---@field lieutenant? AF_NameplateSemanticColor
+---@field caster? AF_NameplateSemanticColor
+---@field default? AF_NameplateSemanticColor
+
+local function SetVertexColorWithCharm(texture, unit, r, g, b, a)
+    local charmedR, charmedG, charmedB = AF.GetColorRGB("CHARMED")
+    texture:SetVertexColorFromBoolean(
+        UnitIsCharmed(unit),
+        CreateColor(charmedR, charmedG, charmedB, a),
+        CreateColor(r, g, b, a)
+    )
+end
+
+local function GetEnabledSemanticColor(config, key)
+    local color = config[key]
+    if color and color.enabled ~= false and color.rgb then
+        return color.rgb
+    end
+end
+
+local function IsSemanticBoss(unit)
+    local isBoss = UnitIsBossMob(unit)
+    if F.isValueNonSecret(isBoss) and isBoss then
+        return true
+    end
+
+    local classification = UnitClassification(unit)
+    if F.isValueNonSecret(classification) and classification == "worldboss" then
+        return true
+    end
+
+    local unitLevel = UnitEffectiveLevel(unit)
+    if not F.isValueNonSecret(unitLevel) then return false end
+    if unitLevel == -1 then return true end
+
+    local playerLevel = UnitEffectiveLevel("player")
+    return F.isValueNonSecret(playerLevel) and unitLevel >= playerLevel + 2
+end
+
+local function IsSemanticLieutenant(unit)
+    local isLieutenant = UnitIsLieutenant(unit)
+    if F.isValueNonSecret(isLieutenant) and isLieutenant then
+        return true
+    end
+
+    local unitLevel = UnitEffectiveLevel(unit)
+    local playerLevel = UnitEffectiveLevel("player")
+    return F.isValueNonSecret(unitLevel)
+        and F.isValueNonSecret(playerLevel)
+        and unitLevel == playerLevel + 1
+end
+
+local function IsSemanticCaster(unit)
+    local class = UnitClassBase(unit)
+    if F.isValueNonSecret(class) and class == "PALADIN" then
+        return true
+    end
+
+    local powerType = UnitPowerType(unit)
+    return F.isValueNonSecret(powerType) and powerType == Mana
+end
+
+local function GetSemanticColor(config, unit)
+    -- Retail 12.0.7.68887 (wow-ui-source 4383ced) and 12.1.0.68824
+    -- (wow-ui-source fa38386):
+    -- UnitClassification, UnitEffectiveLevel, UnitIsBossMob,
+    -- UnitIsLieutenant, UnitPowerType, and UnitClassBase are not documented
+    -- with secret-return aspects in either pinned build. Guard every inspected
+    -- result anyway so a future restricted value simply falls through to the
+    -- next static category without entering a separate combat path.
+    local rgb = GetEnabledSemanticColor(config, "boss")
+    if rgb and IsSemanticBoss(unit) then
+        return AF.UnpackColor(rgb)
+    end
+
+    rgb = GetEnabledSemanticColor(config, "lieutenant")
+    if rgb and IsSemanticLieutenant(unit) then
+        return AF.UnpackColor(rgb)
+    end
+
+    rgb = GetEnabledSemanticColor(config, "caster")
+    if rgb and IsSemanticCaster(unit) then
+        return AF.UnpackColor(rgb)
+    end
+
+    rgb = GetEnabledSemanticColor(config, "default")
+    if rgb then
+        return AF.UnpackColor(rgb)
+    end
+end
 
 local function SetConfiguredColor(bar, texture, config, skipTapDeniedCheck)
     if not config then return end
@@ -17,13 +125,28 @@ local function SetConfiguredColor(bar, texture, config, skipTapDeniedCheck)
     local unit = bar.unit
     local colorType = config.type
     local factor = colorType and colorType:find("_dark$") and 0.2 or 1
+    local alpha = type(config.alpha) == "number" and config.alpha or 1
     local r, g, b
 
-    if AF.UnitIsPlayer(unit) then
+    if colorType and colorType:find("^selection") then
+        r, g, b = UnitSelectionColor(unit, true)
+        if factor ~= 1 then
+            r, g, b = AF.ScaleColor(r, g, b, factor)
+        end
+        SetVertexColorWithCharm(texture, unit, r, g, b, alpha)
+        return r, g, b
+    elseif colorType == "nameplate_semantic" then
+        if not skipTapDeniedCheck and not UnitPlayerControlled(unit) and UnitIsTapDenied(unit) then
+            r, g, b = AF.GetColorRGB("TAP_DENIED")
+        else
+            r, g, b = GetSemanticColor(config, unit)
+            if not r then
+                r, g, b = UnitSelectionColor(unit, true)
+            end
+        end
+    elseif AF.UnitIsPlayer(unit) then
         if not UnitIsConnected(unit) then
             r, g, b = AF.GetColorRGB("OFFLINE")
-        elseif UnitIsCharmed(unit) then
-            r, g, b = AF.GetColorRGB("CHARMED")
         elseif colorType and colorType:find("^class") then
             if UnitHasVehicleUI(unit) then
                 r, g, b = AF.GetColorRGB("FRIENDLY", nil, factor)
@@ -52,7 +175,9 @@ local function SetConfiguredColor(bar, texture, config, skipTapDeniedCheck)
         end
     end
 
-    texture:SetVertexColor(r, g, b, config.alpha or 1)
+    -- Feed UnitIsCharmed directly into a secret-capable region sink so a
+    -- restricted result is never branched on in Lua.
+    SetVertexColorWithCharm(texture, unit, r, g, b, alpha)
     return r, g, b
 end
 
@@ -69,7 +194,7 @@ end
 local AF_SecretHealthBarMixin = {}
 
 function AF_SecretHealthBarMixin:UpdateHealth()
-    -- Retail 12.0.7 (wow-ui-source 6e96727): UnitHealth and
+    -- Retail 12.0.7.68887 (wow-ui-source 4383ced): UnitHealth and
     -- UnitHealthMax may return secrets; native status bars accept them.
     self:SetMinMaxValues(0, UnitHealthMax(self.unit))
     self:SetValue(UnitHealth(self.unit))
@@ -126,12 +251,18 @@ end
 
 function AF_SecretHealthBarMixin:SetupFillColor(config)
     self.fillColor = config
-    if self.unit then self:UpdateColor() end
+    if self.unit then
+        self:RegisterUnitEvents()
+        self:UpdateColor()
+    end
 end
 
 function AF_SecretHealthBarMixin:SetupUnfillColor(config)
     self.unfillColor = config
-    if self.unit then self:UpdateColor() end
+    if self.unit then
+        self:RegisterUnitEvents()
+        self:UpdateColor()
+    end
 end
 
 function AF_SecretHealthBarMixin:EnableHealPrediction(enabled)
@@ -250,6 +381,18 @@ function AF_SecretHealthBarMixin:RegisterUnitEvents()
     self.eventFrame:RegisterUnitEvent("UNIT_ABSORB_AMOUNT_CHANGED", self.unit)
     self.eventFrame:RegisterUnitEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED", self.unit)
     self.eventFrame:RegisterUnitEvent("UNIT_AURA", self.unit)
+
+    local fillIsSemantic = self.fillColor and self.fillColor.type == "nameplate_semantic"
+    local unfillIsSemantic = self.unfillColor and self.unfillColor.type == "nameplate_semantic"
+    if fillIsSemantic or unfillIsSemantic then
+        self.eventFrame:RegisterUnitEvent("UNIT_CLASSIFICATION_CHANGED", self.unit)
+        self.eventFrame:RegisterUnitEvent("UNIT_LEVEL", self.unit)
+        self.eventFrame:RegisterUnitEvent("UNIT_NAME_UPDATE", self.unit)
+        self.eventFrame:RegisterUnitEvent("UNIT_DISPLAYPOWER", self.unit)
+        self.eventFrame:RegisterUnitEvent("UNIT_POWER_BAR_SHOW", self.unit)
+        self.eventFrame:RegisterUnitEvent("UNIT_POWER_BAR_HIDE", self.unit)
+        self.eventFrame:RegisterEvent("PLAYER_LEVEL_CHANGED")
+    end
 end
 
 function AF_SecretHealthBarMixin:SetUnit(unit)
@@ -278,7 +421,15 @@ local function OnEvent(self, event)
     if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
         bar:UpdateHealth()
         bar:UpdatePredictions()
-    elseif event == "UNIT_FACTION" then
+    elseif event == "UNIT_FACTION"
+        or event == "UNIT_CLASSIFICATION_CHANGED"
+        or event == "UNIT_LEVEL"
+        or event == "UNIT_NAME_UPDATE"
+        or event == "UNIT_DISPLAYPOWER"
+        or event == "UNIT_POWER_BAR_SHOW"
+        or event == "UNIT_POWER_BAR_HIDE"
+        or event == "PLAYER_LEVEL_CHANGED"
+    then
         bar:UpdateColor()
     elseif event == "UNIT_AURA" then
         bar:UpdateDispelHighlight()

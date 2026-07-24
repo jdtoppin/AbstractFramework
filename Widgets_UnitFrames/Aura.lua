@@ -7,6 +7,8 @@ local GetAuraDispelTypeColor = C_UnitAuras.GetAuraDispelTypeColor
 local GetAuraDuration = C_UnitAuras.GetAuraDuration
 local GetUnitAuraInstanceIDs = C_UnitAuras.GetUnitAuraInstanceIDs
 local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
+local STATUS_BAR_IMMEDIATE = Enum.StatusBarInterpolation.Immediate
+local STATUS_BAR_ELAPSED_TIME = Enum.StatusBarTimerDirection.ElapsedTime
 
 local durationFormatter = C_StringUtil.CreateNumericRuleFormatter()
 durationFormatter:SetBreakpoints({
@@ -41,9 +43,31 @@ function AF.GetAuraDispelColorCurve()
     return curve
 end
 
-local function SetupAuraCooldownStyle(icon, cooldown, style)
-    cooldown:SetShown(style ~= "none")
+local function CreateAuraDurationBar(parent, anchor)
+    local durationBar = CreateFrame("StatusBar", nil, parent)
+    AF.SetFrameLevel(durationBar, 1, parent)
+    durationBar:SetAllPoints(anchor)
+    durationBar:SetOrientation("VERTICAL")
+    durationBar:SetReverseFill(true)
+    durationBar:SetStatusBarTexture(AF.GetPlainTexture())
+    durationBar:SetStatusBarColor(0, 0, 0, 0.75)
+    durationBar:Hide()
+
+    return durationBar
+end
+
+local function SetupAuraCooldownStyle(icon, cooldown, durationBar, style)
+    local isVertical = style == "vertical" or style == "block_vertical"
+    local isBlockVertical = style == "block_vertical"
+    cooldown:SetShown(style ~= "none" and not isVertical)
     cooldown:SetDrawEdge(style:find("edge$") ~= nil)
+    durationBar:SetShown(isVertical)
+    durationBar:SetStatusBarColor(
+        isBlockVertical and 0.5 or 0,
+        isBlockVertical and 0.5 or 0,
+        isBlockVertical and 0.5 or 0,
+        isBlockVertical and 1 or 0.75
+    )
     icon:SetShown(style:find("^block") == nil)
 end
 
@@ -97,6 +121,7 @@ function AF_SecretAuraMixin:SetAura(unit, auraInstanceID)
 
     self.stackText:SetText(GetAuraApplicationDisplayCount(unit, auraInstanceID))
     self.cooldown:SetCooldownFromDurationObject(duration)
+    self.durationBar:SetTimerDuration(duration, STATUS_BAR_IMMEDIATE, STATUS_BAR_ELAPSED_TIME)
     self.durationTextBinding:SetDuration(duration)
     self.durationTextBinding:Enable()
     SetAuraShown(self, true)
@@ -161,6 +186,7 @@ function AF_SecretAuraMixin:SetCooldown(startTime, duration, applications, icon)
     self.dispelOverlay:Hide()
     self.stackText:SetText(applications)
     self.cooldown:SetCooldownFromDurationObject(previewDuration)
+    self.durationBar:SetTimerDuration(previewDuration, STATUS_BAR_IMMEDIATE, STATUS_BAR_ELAPSED_TIME)
     self.durationTextBinding:SetDuration(previewDuration)
     self.durationTextBinding:Enable()
     SetAuraShown(self, true)
@@ -172,7 +198,7 @@ end
 
 function AF_SecretAuraMixin:SetCooldownStyle(style)
     self.cooldownStyle = style
-    SetupAuraCooldownStyle(self.icon, self.cooldown, style)
+    SetupAuraCooldownStyle(self.icon, self.cooldown, self.durationBar, style)
 end
 
 function AF_SecretAuraMixin:SetupDurationText(config)
@@ -246,22 +272,36 @@ function AF.InitAura(button, noBorder, visibilityManagedExternally)
 
     local cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
     button.cooldown = cooldown
-    cooldown:SetAllPoints()
+    AF.SetFrameLevel(cooldown, 1, button)
+    cooldown:SetAllPoints(icon)
     cooldown:SetDrawBling(false)
     cooldown:SetDrawEdge(false)
+    -- AF's duration binding owns the numeric label. Keep the cooldown frame
+    -- for its sweep and edge without native or third-party countdown text.
+    cooldown:SetHideCountdownNumbers(true)
+    cooldown.noCooldownCount = true
     cooldown:SetUseAuraDisplayTime(true)
 
-    local dispelOverlay = button:CreateTexture(nil, "OVERLAY")
+    -- Retail 12.0.7.68887 SimpleStatusBar:SetTimerDuration accepts the opaque
+    -- LuaDurationObject, so vertical styles do not inspect restricted time.
+    local durationBar = CreateAuraDurationBar(button, icon)
+    button.durationBar = durationBar
+
+    local overlayFrame = CreateFrame("Frame", nil, button)
+    AF.SetFrameLevel(overlayFrame, 2, button)
+    overlayFrame:SetAllPoints()
+
+    local dispelOverlay = overlayFrame:CreateTexture(nil, "OVERLAY")
     button.dispelOverlay = dispelOverlay
     dispelOverlay:SetAllPoints()
     dispelOverlay:SetTexture([[Interface\Buttons\UI-Debuff-Overlays]])
     dispelOverlay:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
     dispelOverlay:Hide()
 
-    local durationText = button:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
+    local durationText = overlayFrame:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
     button.durationText = durationText
 
-    local stackText = button:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
+    local stackText = overlayFrame:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
     button.stackText = stackText
 
     button.durationTextBinding = C_DurationUtil.CreateDurationTextBinding()
@@ -325,29 +365,38 @@ local function InitializeCustomAuraButton(button, style)
     end
 
     local cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
-    cooldown:SetAllPoints()
+    AF.SetFrameLevel(cooldown, 1, button)
+    cooldown:SetAllPoints(icon)
     cooldown:SetDrawBling(false)
     cooldown:SetDrawEdge(false)
+    -- AF's duration binding owns the numeric label. Keep the cooldown frame
+    -- for its sweep and edge without native or third-party countdown text.
+    cooldown:SetHideCountdownNumbers(true)
+    cooldown.noCooldownCount = true
     cooldown:SetUseAuraDisplayTime(true)
-    if style.cooldownStyle then
-        SetupAuraCooldownStyle(icon, cooldown, style.cooldownStyle)
-    end
+
+    local durationBar = CreateAuraDurationBar(button, icon)
+    SetupAuraCooldownStyle(icon, cooldown, durationBar, style.cooldownStyle or "none")
+
+    local overlayFrame = CreateFrame("Frame", nil, button)
+    AF.SetFrameLevel(overlayFrame, 2, button)
+    overlayFrame:SetAllPoints()
 
     local durationText
     if style.durationText then
-        durationText = button:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
+        durationText = overlayFrame:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
         SetupAuraDurationText(durationText, style.durationText)
     end
 
     local stackText
     if style.stackText then
-        stackText = button:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
+        stackText = overlayFrame:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
         SetupAuraStackText(stackText, style.stackText)
     end
 
     local dispelOverlay
     if style.dispelColor then
-        dispelOverlay = button:CreateTexture(nil, "OVERLAY")
+        dispelOverlay = overlayFrame:CreateTexture(nil, "OVERLAY")
         dispelOverlay:SetAllPoints()
         dispelOverlay:SetTexture([[Interface\Buttons\UI-Debuff-Overlays]])
         dispelOverlay:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
@@ -359,6 +408,10 @@ local function InitializeCustomAuraButton(button, style)
     -- leave the live button opaque to addon code.
     button:SetIcon(icon)
     button:SetDurationCooldown(cooldown)
+    button:SetDurationBar(durationBar, {
+        interpolation = STATUS_BAR_IMMEDIATE,
+        direction = STATUS_BAR_ELAPSED_TIME,
+    })
     if durationText then
         button:SetDurationText(durationText, {
             formatter = durationFormatter,

@@ -5,6 +5,12 @@ local UnitCastingDuration = UnitCastingDuration
 local UnitCastingInfo = UnitCastingInfo
 local UnitChannelDuration = UnitChannelDuration
 local UnitChannelInfo = UnitChannelInfo
+local PlayerIsSpellTarget = PlayerIsSpellTarget
+local UnitSpellTargetName = UnitSpellTargetName
+
+local EvaluateColorValueFromBoolean =
+    C_CurveUtil.EvaluateColorValueFromBoolean
+local IsSpellImportant = C_Spell.IsSpellImportant
 
 local Immediate = Enum.StatusBarInterpolation.Immediate
 local ElapsedTime = Enum.StatusBarTimerDirection.ElapsedTime
@@ -47,6 +53,7 @@ local AF_SecretCastBarMixin = {}
 
 function AF_SecretCastBarMixin:SetStatusBar(statusBar)
     self.statusBar = statusBar
+    self:ApplyNormalCastColor()
 end
 
 function AF_SecretCastBarMixin:SetNameText(fontString)
@@ -55,6 +62,46 @@ end
 
 function AF_SecretCastBarMixin:SetIcon(texture)
     self.icon = texture
+end
+
+function AF_SecretCastBarMixin:SetImportantCastRegion(region)
+    if self.importantCastRegion then
+        self.importantCastRegion:SetAlpha(0)
+    end
+    self.importantCastRegion = region
+    if region then
+        region:SetAlpha(0)
+    end
+end
+
+function AF_SecretCastBarMixin:SetSpellTargetText(fontString)
+    if self.spellTargetText then
+        self.spellTargetText:ClearText()
+    end
+    self.spellTargetText = fontString
+    if fontString then
+        fontString:ClearText()
+    end
+end
+
+function AF_SecretCastBarMixin:SetPlayerTargetRegion(region)
+    if self.playerTargetRegion then
+        self.playerTargetRegion:SetAlpha(0)
+    end
+    self.playerTargetRegion = region
+    if region then
+        region:SetAlpha(0)
+    end
+end
+
+function AF_SecretCastBarMixin:SetUninterruptibleCastRegion(region)
+    if self.uninterruptibleCastRegion then
+        self.uninterruptibleCastRegion:SetAlpha(0)
+    end
+    self.uninterruptibleCastRegion = region
+    if region then
+        region:SetAlpha(0)
+    end
 end
 
 function AF_SecretCastBarMixin:SetDurationText(fontString)
@@ -75,8 +122,158 @@ end
 function AF_SecretCastBarMixin:OnInterruptibilityChanged()
 end
 
-function AF_SecretCastBarMixin:ApplyCast(name, texture, duration, direction, castType, castBarID)
-    -- Retail 12.0.7 (wow-ui-source 6e96727): UnitCastingDuration may
+local function CopyRGBA(color)
+    return {
+        color[1],
+        color[2],
+        color[3],
+        color[4] == nil and 1 or color[4],
+    }
+end
+
+---@param normalColor number[]
+---@param interruptibleColor number[]
+---@param uninterruptibleColor number[]
+function AF_SecretCastBarMixin:SetInterruptibilityColors(
+    normalColor,
+    interruptibleColor,
+    uninterruptibleColor
+)
+    -- These three colors are static consumer configuration, never values
+    -- derived from a restricted unit.
+    self.interruptibilityColors = {
+        normal = CopyRGBA(normalColor),
+        interruptible = CopyRGBA(interruptibleColor),
+        uninterruptible = CopyRGBA(uninterruptibleColor),
+    }
+    self:ApplyNormalCastColor()
+end
+
+function AF_SecretCastBarMixin:ClearInterruptibilityColors()
+    self:ApplyNormalCastColor()
+    self.interruptibilityColors = nil
+end
+
+function AF_SecretCastBarMixin:ApplyNormalCastColor()
+    local colors = self.interruptibilityColors
+    if not self.statusBar or not colors then return end
+
+    self.statusBar:SetStatusBarColor(unpack(colors.normal))
+end
+
+function AF_SecretCastBarMixin:ApplyInterruptibilityColor(notInterruptible)
+    local colors = self.interruptibilityColors
+    if not self.statusBar or not colors then return end
+
+    local interruptible = colors.interruptible
+    local uninterruptible = colors.uninterruptible
+
+    -- Retail 12.0.7.68887 (wow-ui-source 4383ced) and 12.1.0.68824
+    -- (wow-ui-source fa38386): UnitCastingInfo and UnitChannelInfo are
+    -- SecretWhenUnitSpellCastRestricted. C_CurveUtil's component evaluator
+    -- accepts tainted secret booleans, and SimpleStatusBar.SetStatusBarColor
+    -- accepts the resulting tainted color components. Do not branch on or
+    -- expose notInterruptible to a consumer callback.
+    self.statusBar:SetStatusBarColor(
+        EvaluateColorValueFromBoolean(
+            notInterruptible,
+            uninterruptible[1],
+            interruptible[1]
+        ),
+        EvaluateColorValueFromBoolean(
+            notInterruptible,
+            uninterruptible[2],
+            interruptible[2]
+        ),
+        EvaluateColorValueFromBoolean(
+            notInterruptible,
+            uninterruptible[3],
+            interruptible[3]
+        ),
+        EvaluateColorValueFromBoolean(
+            notInterruptible,
+            uninterruptible[4],
+            interruptible[4]
+        )
+    )
+end
+
+function AF_SecretCastBarMixin:ApplyInterruptibilityState(
+    notInterruptible
+)
+    self:ApplyInterruptibilityColor(notInterruptible)
+    -- Keep optional uninterruptible decoration in the same native boolean
+    -- sink path so mid-cast attachment never needs to inspect the flag.
+    if self.uninterruptibleCastRegion then
+        self.uninterruptibleCastRegion:SetAlphaFromBoolean(
+            notInterruptible,
+            1,
+            0
+        )
+    end
+end
+
+function AF_SecretCastBarMixin:UpdateLiveCastSinks(
+    spellID,
+    notInterruptible
+)
+    -- Retail 12.0.7.68887 (wow-ui-source 4383ced) and 12.1.0.68824
+    -- (wow-ui-source fa38386): C_Spell.IsSpellImportant accepts tainted
+    -- secret spell identifiers and SimpleRegion.SetAlphaFromBoolean accepts
+    -- the resulting boolean without exposing it to Lua control flow.
+    if self.importantCastRegion then
+        self.importantCastRegion:SetAlphaFromBoolean(
+            IsSpellImportant(spellID),
+            1,
+            0
+        )
+    end
+
+    -- The same builds document UnitSpellTargetName and
+    -- PlayerIsSpellTarget as SecretReturns. SimpleFontString.SetText and
+    -- SimpleRegion.SetAlphaFromBoolean are their respective native sinks.
+    if self.spellTargetText then
+        self.spellTargetText:SetText(UnitSpellTargetName(self.unit))
+    end
+    if self.playerTargetRegion then
+        self.playerTargetRegion:SetAlphaFromBoolean(
+            PlayerIsSpellTarget(self.unit),
+            1,
+            0
+        )
+    end
+
+    self:ApplyInterruptibilityState(notInterruptible)
+end
+
+function AF_SecretCastBarMixin:ClearCastSinks()
+    if self.importantCastRegion then
+        self.importantCastRegion:SetAlpha(0)
+    end
+    if self.spellTargetText then
+        self.spellTargetText:ClearText()
+    end
+    if self.playerTargetRegion then
+        self.playerTargetRegion:SetAlpha(0)
+    end
+    if self.uninterruptibleCastRegion then
+        self.uninterruptibleCastRegion:SetAlpha(0)
+    end
+    self:ApplyNormalCastColor()
+end
+
+function AF_SecretCastBarMixin:ApplyCast(
+    name,
+    texture,
+    duration,
+    direction,
+    castType,
+    castBarID,
+    spellID,
+    notInterruptible,
+    hasLiveCastData
+)
+    -- Retail 12.0.7.68887 (wow-ui-source 4383ced): UnitCastingDuration may
     -- return a secret LuaDurationObject. Copy() is explicitly
     -- ReturnsNeverSecret, providing an opaque handle whose internal values can
     -- be consumed by native duration-aware widgets without Lua inspecting
@@ -102,33 +299,62 @@ function AF_SecretCastBarMixin:ApplyCast(name, texture, duration, direction, cas
         self.durationTextBinding:Enable()
     end
 
+    self:ApplyNormalCastColor()
+    if hasLiveCastData then
+        -- hasLiveCastData is an ordinary call-site fact. spellID and
+        -- notInterruptible are forwarded only to native secret-capable sinks.
+        self:UpdateLiveCastSinks(spellID, notInterruptible)
+    else
+        self:ClearCastSinks()
+    end
+
     self:Show()
     self:OnCastStart(castType, castBarID, isNewCast)
 end
 
 function AF_SecretCastBarMixin:UpdateCasting()
-    local name, _, texture, _, _, _, _, _, _, castBarID = UnitCastingInfo(self.unit)
-    self:ApplyCast(name, texture, UnitCastingDuration(self.unit), ElapsedTime, "cast", castBarID)
+    self:UpdateCurrentCast()
 end
 
-function AF_SecretCastBarMixin:UpdateChanneling(castType)
-    local name, _, texture, _, _, _, _, _, isEmpowered, _, castBarID = UnitChannelInfo(self.unit)
-    local direction = isEmpowered and ElapsedTime or RemainingTime
-    self:ApplyCast(name, texture, UnitChannelDuration(self.unit), direction, castType, castBarID)
+function AF_SecretCastBarMixin:UpdateChanneling()
+    self:UpdateCurrentCast()
 end
 
 function AF_SecretCastBarMixin:UpdateCurrentCast()
-    local castName, _, castTexture, _, _, _, _, _, _, castBarID = UnitCastingInfo(self.unit)
+    local castName, _, castTexture, _, _, _, _, castNotInterruptible,
+        castSpellID, castBarID = UnitCastingInfo(self.unit)
     if castBarID then
-        self:ApplyCast(castName, castTexture, UnitCastingDuration(self.unit), ElapsedTime, "cast", castBarID)
+        self:ApplyCast(
+            castName,
+            castTexture,
+            UnitCastingDuration(self.unit),
+            ElapsedTime,
+            "cast",
+            castBarID,
+            castSpellID,
+            castNotInterruptible,
+            true
+        )
         return
     end
 
-    local channelName, _, channelTexture, _, _, _, _, _, isEmpowered, _, channelCastBarID = UnitChannelInfo(self.unit)
+    local channelName, _, channelTexture, _, _, _, channelNotInterruptible,
+        channelSpellID, isEmpowered, _, channelCastBarID =
+        UnitChannelInfo(self.unit)
     if channelCastBarID then
         local castType = isEmpowered and "empower" or "channel"
         local direction = isEmpowered and ElapsedTime or RemainingTime
-        self:ApplyCast(channelName, channelTexture, UnitChannelDuration(self.unit), direction, castType, channelCastBarID)
+        self:ApplyCast(
+            channelName,
+            channelTexture,
+            UnitChannelDuration(self.unit),
+            direction,
+            castType,
+            channelCastBarID,
+            channelSpellID,
+            channelNotInterruptible,
+            true
+        )
         return
     end
 
@@ -142,11 +368,12 @@ function AF_SecretCastBarMixin:StopCast(reason)
     self.durationTextBinding:Disable()
 
     if self.nameText then
-        self.nameText:SetText("")
+        self.nameText:ClearText()
     end
     if self.icon then
         self.icon:SetTexture(nil)
     end
+    self:ClearCastSinks()
 
     self:Hide()
     self:OnCastStop(reason)
@@ -192,7 +419,17 @@ function AF_SecretCastBarMixin:SetPreview(name, texture, seconds, castType)
     duration:SetTimeFromStart(GetTime(), seconds)
 
     local direction = castType == "channel" and RemainingTime or ElapsedTime
-    self:ApplyCast(name, texture, duration, direction, castType or "cast", -1)
+    self:ApplyCast(
+        name,
+        texture,
+        duration,
+        direction,
+        castType or "cast",
+        -1,
+        nil,
+        nil,
+        false
+    )
 end
 
 local function OnEvent(self, event)
@@ -206,8 +443,10 @@ local function OnEvent(self, event)
     elseif EMPOWER_EVENTS[event] then
         self:UpdateChanneling("empower")
     elseif event == "UNIT_SPELLCAST_INTERRUPTIBLE" then
+        self:ApplyInterruptibilityState(false)
         self:OnInterruptibilityChanged(true)
     elseif event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" then
+        self:ApplyInterruptibilityState(true)
         self:OnInterruptibilityChanged(false)
     else
         self:StopCast(event)
