@@ -1,82 +1,114 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
 
-local IsSpellKnown = IsSpellKnown
-local GetSpellCooldown = C_Spell.GetSpellCooldown
-
-local function GetGCD()
-    return GetSpellCooldown(61304).duration
-end
+local IsSpellKnownOrInSpellBook = AF.isRetail
+    and C_SpellBook.IsSpellKnownOrInSpellBook
+local GetSpellCooldownDuration = AF.isRetail
+    and C_Spell.GetSpellCooldownDuration
+local PlayerSpellBook = AF.isRetail
+    and Enum.SpellBookSpellBank.Player
+local PetSpellBook = AF.isRetail
+    and Enum.SpellBookSpellBank.Pet
+local IsKnownClassic =
+    IsSpellKnownOrOverridesKnown or IsSpellKnown
 
 local INTERRUPT_SPELLS = {
-    -- true: check gcd
-    WARRIOR = {
-        [6552] = false, -- 拳击
-    },
-    PALADIN = {
-        [96231] = false, -- 责难
-        [31935] = true, -- 复仇者之盾
-    },
-    HUNTER = {
-        [187707] = false, -- 压制
-    },
-    ROGUE = {
-        [1766] = false, -- 脚踢
-    },
-    PRIEST = {
-        [15487] = false, -- 沉默
-    },
-    DEATHKNIGHT = {
-        [47528] = false, -- 心灵冰冻
-    },
-    SHAMAN = {
-        [57994] = false, -- 风剪
-    },
-    MAGE = {
-        [2139] = false, -- 法术反制
-    },
-    WARLOCK = {
-        [119910] = false, -- 法术封锁
-        [119914] = false, -- 巨斧投掷
-    },
-    MONK = {
-        [116705] = false, -- 切喉手
-    },
-    DRUID = {
-        [106839] = false, -- 迎头痛击
-        [78675] = false, -- 日光术
-    },
-    DEMONHUNTER = {
-        [183752] = false, -- 瓦解
-    },
-    EVOKER = {
-        [351338] = false, -- 镇压
-    },
+    WARRIOR = {6552},
+    PALADIN = {96231, 31935},
+    HUNTER = {147362, 187707},
+    ROGUE = {1766},
+    PRIEST = {15487},
+    DEATHKNIGHT = {47528},
+    SHAMAN = {57994},
+    MAGE = {2139},
+    WARLOCK = {89766, 119910, 132409},
+    MONK = {116705},
+    DRUID = {38675, 106839, 78675},
+    DEMONHUNTER = {183752},
+    EVOKER = {351338},
 }
 
-local known_spells = {}
+local knownSpells = {}
 
-local function SPELLS_CHANGED()
-    wipe(known_spells)
-    for spell, checkGCD in pairs(INTERRUPT_SPELLS[AF.player.class]) do
-        if IsSpellKnownOrOverridesKnown(spell) then
-            known_spells[spell] = checkGCD
+local function IsKnownInterrupt(spellID)
+    if IsSpellKnownOrInSpellBook then
+        return IsSpellKnownOrInSpellBook(spellID, PlayerSpellBook)
+            or IsSpellKnownOrInSpellBook(spellID, PetSpellBook)
+    end
+    return IsKnownClassic and IsKnownClassic(spellID)
+end
+
+local function UpdateKnownInterrupts()
+    wipe(knownSpells)
+
+    local classSpells = INTERRUPT_SPELLS[AF.player.class]
+    if not classSpells then return end
+
+    for _, spellID in ipairs(classSpells) do
+        if IsKnownInterrupt(spellID) then
+            knownSpells[#knownSpells + 1] = spellID
         end
     end
 end
 
 local timer
-local function DELAYED_SPELLS_CHANGED()
+local function DelayedUpdateKnownInterrupts()
     if timer then timer:Cancel() end
-    timer = C_Timer.NewTimer(1, SPELLS_CHANGED)
+    timer = C_Timer.NewTimer(1, UpdateKnownInterrupts)
 end
-AF.CreateBasicEventHandler(DELAYED_SPELLS_CHANGED, "SPELLS_CHANGED")
+
+AF.CreateBasicEventHandler(
+    DelayedUpdateKnownInterrupts,
+    "PLAYER_LOGIN",
+    "SPELLS_CHANGED"
+)
+
+function AF.GetKnownInterruptSpells()
+    return knownSpells
+end
+
+function AF.GetPrimaryInterruptSpell()
+    return knownSpells[1]
+end
+
+function AF.GetPrimaryInterruptCooldownDuration()
+    local spellID = knownSpells[1]
+    if not spellID then return end
+    if not GetSpellCooldownDuration then return spellID end
+    -- Retail 12.0.7.68887 and 12.1.0.68824 expose cooldown state through a
+    -- LuaDurationObject. Consumers must forward its secret-capable accessors
+    -- to native sinks rather than inspect the returned values in Lua.
+    -- Interrupt readiness must not be suppressed by the global cooldown.
+    return spellID, GetSpellCooldownDuration(spellID, true)
+end
 
 function AF.InterruptUsable()
-    for spell, checkGCD in pairs(known_spells) do
-        local cd = GetSpellCooldown(spell).duration
-        if cd == 0 or (checkGCD and cd == GetGCD()) then
-            return true
+    if AF.isRetail then
+        for _, spellID in ipairs(knownSpells) do
+            local duration =
+                GetSpellCooldownDuration(spellID, true)
+            if duration
+                and not duration:HasSecretValues()
+                and duration:IsZero()
+            then
+                return true
+            end
         end
+        return false
     end
+
+    -- Classic clients do not load the Retail duration-object contract.
+    for _, spellID in ipairs(knownSpells) do
+        local cooldownDuration
+        if C_Spell and C_Spell.GetSpellCooldown then
+            local cooldownInfo = C_Spell.GetSpellCooldown(spellID)
+            cooldownDuration = cooldownInfo
+                and cooldownInfo.duration
+        elseif GetSpellCooldown then
+            local _, legacyDuration = GetSpellCooldown(spellID)
+            cooldownDuration = legacyDuration
+        end
+        if cooldownDuration == 0 then return true end
+    end
+    return false
 end
