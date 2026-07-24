@@ -120,6 +120,7 @@ AF.DEBUG_EVENTS = {
     AF_GROUP_TYPE_CHANGED = "lightblue",
     AF_GROUP_PERMISSION_CHANGED = false,
     AF_MARKER_PERMISSION_CHANGED = false,
+    AF_UNIT_ITEM_LEVEL_READY = false,
     AF_JOIN_TEMP_CHANNEL = "classicrose",
     AF_LEAVE_TEMP_CHANNEL = "classicrose",
     AF_UNIT_ITEM_LEVEL_UPDATE = false,

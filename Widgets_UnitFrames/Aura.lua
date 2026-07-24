@@ -88,9 +88,16 @@ end
 ---@class AF_SecretAura:Button
 local AF_SecretAuraMixin = {}
 
+local function SetAuraShown(aura, shown)
+    if not aura.visibilityManagedExternally then
+        aura:SetShown(shown)
+    end
+end
+
 function AF_SecretAuraMixin:SetAura(unit, auraInstanceID)
     self.unit = unit
     self.auraInstanceID = auraInstanceID
+    self.inventorySlot = nil
 
     -- Retail 12.0.7 (wow-ui-source 6e96727): Copy() produces the
     -- never-secret opaque duration handle accepted by the native cooldown and
@@ -117,18 +124,41 @@ function AF_SecretAuraMixin:SetAura(unit, auraInstanceID)
     self.durationBar:SetTimerDuration(duration, STATUS_BAR_IMMEDIATE, STATUS_BAR_ELAPSED_TIME)
     self.durationTextBinding:SetDuration(duration)
     self.durationTextBinding:Enable()
-    self:Show()
+    SetAuraShown(self, true)
+end
+
+function AF_SecretAuraMixin:SetTemporaryEnchant(unit, inventorySlot, remainingTimeMs, applications)
+    self.unit = unit
+    self.auraInstanceID = nil
+    self.inventorySlot = inventorySlot
+
+    -- Retail 12.0.7's BuffFrame performs this same conversion on values from
+    -- GetWeaponEnchantInfo. Keep the calculation here in the shared widget;
+    -- the 12.1 backend uses CustomAuraContainer's native enchantment source.
+    local duration = C_DurationUtil.CreateDuration()
+    duration:SetTimeFromStart(GetTime(), remainingTimeMs / 1000)
+    self.duration = duration
+
+    self.icon:SetTexture(GetInventoryItemTexture(unit, inventorySlot))
+    self.dispelOverlay:Hide()
+    self.stackText:SetText(applications > 1 and applications or "")
+    self.cooldown:SetCooldownFromDurationObject(duration)
+    self.durationTextBinding:SetDuration(duration)
+    self.durationTextBinding:Enable()
+    SetAuraShown(self, true)
 end
 
 function AF_SecretAuraMixin:ClearAura()
     self.unit = nil
     self.auraInstanceID = nil
+    self.inventorySlot = nil
     self.duration = nil
     self.durationTextBinding:Disable()
+    self.cooldown:Clear()
     self.stackText:SetText("")
     self.icon:SetTexture(self.fallbackIcon)
     self.dispelOverlay:Hide()
-    self:Hide()
+    SetAuraShown(self, false)
 end
 
 function AF_SecretAuraMixin:SetFallbackIcon(texture)
@@ -147,6 +177,7 @@ function AF_SecretAuraMixin:SetCooldown(startTime, duration, applications, icon)
     -- Config-mode preview only. Combat aura data uses SetAura above.
     self.unit = nil
     self.auraInstanceID = nil
+    self.inventorySlot = nil
     local previewDuration = C_DurationUtil.CreateDuration()
     previewDuration:SetTimeFromStart(startTime, duration)
     self.duration = previewDuration
@@ -158,7 +189,11 @@ function AF_SecretAuraMixin:SetCooldown(startTime, duration, applications, icon)
     self.durationBar:SetTimerDuration(previewDuration, STATUS_BAR_IMMEDIATE, STATUS_BAR_ELAPSED_TIME)
     self.durationTextBinding:SetDuration(previewDuration)
     self.durationTextBinding:Enable()
-    self:Show()
+    SetAuraShown(self, true)
+end
+
+function AF_SecretAuraMixin:SetVisibilityManagedExternally(managed)
+    self.visibilityManagedExternally = managed
 end
 
 function AF_SecretAuraMixin:SetCooldownStyle(style)
@@ -190,7 +225,8 @@ function AF_SecretAuraMixin:UpdatePixels()
 end
 
 function AF_SecretAuraMixin:ShowTooltip()
-    if not self.tooltipConfig or not self.tooltipConfig.enabled or not self.auraInstanceID then return end
+    if not self.tooltipConfig or not self.tooltipConfig.enabled then return end
+    if not self.auraInstanceID and not self.inventorySlot then return end
 
     local config = self.tooltipConfig
     if config.anchorTo == "self" and config.position then
@@ -200,7 +236,11 @@ function AF_SecretAuraMixin:ShowTooltip()
         GameTooltip_SetDefaultAnchor(GameTooltip, self)
     end
 
-    GameTooltip:SetUnitAuraByAuraInstanceID(self.unit, self.auraInstanceID)
+    if self.auraInstanceID then
+        GameTooltip:SetUnitAuraByAuraInstanceID(self.unit, self.auraInstanceID)
+    else
+        GameTooltip:SetInventoryItem(self.unit, self.inventorySlot)
+    end
     GameTooltip:Show()
 end
 
@@ -217,8 +257,9 @@ local function Aura_OnLeave(self)
 end
 
 ---@return AF_SecretAura aura
-function AF.InitAura(button, noBorder)
+function AF.InitAura(button, noBorder, visibilityManagedExternally)
     Mixin(button, AF_SecretAuraMixin)
+    button.visibilityManagedExternally = visibilityManagedExternally
 
     if not noBorder then
         AF.ApplyDefaultBackdrop(button)
@@ -273,7 +314,7 @@ function AF.InitAura(button, noBorder)
     button:SetFallbackIcon(134400)
     button:SetScript("OnEnter", Aura_OnEnter)
     button:SetScript("OnLeave", Aura_OnLeave)
-    button:Hide()
+    SetAuraShown(button, false)
 
     return button
 end
@@ -396,6 +437,26 @@ local function InitializeCustomAuraButton(button, style)
     end
 end
 
+local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle)
+    local options = AF.Copy(buttonOptions or {})
+    local style = AF.Copy(buttonStyle or {})
+    assert(options.initializeFrame == nil, "initializeFrame is managed by AbstractFramework")
+    assert(options.templateNames == nil, "templateNames are managed by AbstractFramework")
+
+    if not style.noBorder then
+        style.backdropBorderColor = style.backdropBorderColor or {AF.GetColorRGB("border")}
+        style.backdropBackgroundColor = style.backdropBackgroundColor or {AF.GetColorRGB("background")}
+    end
+    if style.dispelColor and not style.dispelColorCurve then
+        style.dispelColorCurve = AF.GetAuraDispelColorCurve()
+    end
+
+    options.initializeFrame = function(button)
+        InitializeCustomAuraButton(button, style)
+    end
+    return options
+end
+
 ---@return boolean
 function AF.HasCustomAuraContainer()
     return AF.hasCustomAuraContainer
@@ -419,24 +480,15 @@ end
 function AF.AddCustomAuraGroup(container, groupKey, filterString, groupOptions, buttonStyle)
     assert(AF.hasCustomAuraContainer, "CustomAuraContainerTemplate is unavailable")
 
-    local options = AF.Copy(groupOptions or {})
-    local style = AF.Copy(buttonStyle or {})
-    assert(options.initializeFrame == nil, "initializeFrame is managed by AbstractFramework")
-    assert(options.templateNames == nil, "templateNames are managed by AbstractFramework")
-
-    if not style.noBorder then
-        style.backdropBorderColor = style.backdropBorderColor or {AF.GetColorRGB("border")}
-        style.backdropBackgroundColor = style.backdropBackgroundColor or {AF.GetColorRGB("background")}
-    end
-    if style.dispelColor and not style.dispelColorCurve then
-        style.dispelColorCurve = AF.GetAuraDispelColorCurve()
-    end
-
-    options.initializeFrame = function(button)
-        InitializeCustomAuraButton(button, style)
-    end
-
+    local options = GetCustomAuraButtonOptions(groupOptions, buttonStyle)
     container:AddAuraGroup(groupKey, filterString, options)
+end
+
+function AF.AddCustomItemEnchantment(container, itemEnchantmentSlot, enchantmentOptions, buttonStyle)
+    assert(AF.hasCustomAuraContainer, "CustomAuraContainerTemplate is unavailable")
+
+    local options = GetCustomAuraButtonOptions(enchantmentOptions, buttonStyle)
+    container:AddItemEnchantment(itemEnchantmentSlot, options)
 end
 
 ---@class AF_SecretAuraList:Frame

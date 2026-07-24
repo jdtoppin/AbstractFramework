@@ -107,6 +107,72 @@ function AF.ClearTexCoord(tex)
 end
 
 ---------------------------------------------------------------------
+-- circular icon helpers
+---------------------------------------------------------------------
+local BLIZZARD_CIRCLE_MASK_ATLAS = "talents-node-circle-mask"
+
+local function HasBlizzardCircleMask()
+    return C_Texture.GetAtlasExists and C_Texture.GetAtlasExists(BLIZZARD_CIRCLE_MASK_ATLAS)
+end
+
+local function DisableCircularTextureSnap(texture)
+    if texture.SetSnapToPixelGrid then
+        texture:SetSnapToPixelGrid(false)
+        texture:SetTexelSnappingBias(0)
+    end
+end
+
+---@param mask MaskTexture
+---@param relativeTo Region|nil
+---@param inset number|nil
+function AF.ApplyCircularIconMask(mask, relativeTo, inset)
+    if HasBlizzardCircleMask() then
+        mask:SetAtlas(BLIZZARD_CIRCLE_MASK_ATLAS, false, "TRILINEAR")
+    else
+        mask:SetTexture(
+            AF.GetTexture("Circle_IconMask"),
+            "CLAMPTOBLACKADDITIVE",
+            "CLAMPTOBLACKADDITIVE",
+            "TRILINEAR")
+    end
+
+    DisableCircularTextureSnap(mask)
+    if relativeTo then
+        AF.SetInside(mask, relativeTo, inset or 0)
+    end
+end
+
+---@param texture Texture
+---@param inset number|nil
+---@return MaskTexture mask
+function AF.CreateCircularMask(texture, inset)
+    local mask = texture:GetParent():CreateMaskTexture()
+    AF.ApplyCircularIconMask(mask, texture, inset)
+    texture:AddMaskTexture(mask)
+    return mask
+end
+
+---@param parent Frame
+---@param relativeTo Region|nil defaults to parent
+---@param color table|string|nil defaults to "border"
+---@param drawLayer DrawLayer|nil defaults to "BACKGROUND"
+---@param subLevel number|nil
+---@return AF_Texture border
+function AF.CreateCircularIconBorder(parent, relativeTo, color, drawLayer, subLevel)
+    relativeTo = relativeTo or parent
+    local border = AF.CreateTexture(
+        parent, AF.GetPlainTexture(), color or "border", drawLayer or "BACKGROUND", subLevel)
+    DisableCircularTextureSnap(border)
+    border:SetAllPoints(relativeTo)
+
+    border.mask = parent:CreateMaskTexture()
+    AF.ApplyCircularIconMask(border.mask, relativeTo)
+    border:AddMaskTexture(border.mask)
+
+    return border
+end
+
+---------------------------------------------------------------------
 -- calc texcoord
 ---------------------------------------------------------------------
 ---calculates texture coordinates with adjustments for aspect ratio and cropping
@@ -129,10 +195,9 @@ function AF.CalcTexCoordPreCrop(crop, targetAspectRatio, originalAspectRatio, an
     }
 
     targetAspectRatio = targetAspectRatio or 1
+    -- In most cases, the original aspect ratio is 1.
     if originalAspectRatio then
         targetAspectRatio = targetAspectRatio / originalAspectRatio
-    else
-        -- in most cases, the original aspect ratio is 1
     end
 
     local xRatio = targetAspectRatio < 1 and targetAspectRatio or 1
