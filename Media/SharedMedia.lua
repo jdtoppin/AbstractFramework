@@ -4,21 +4,25 @@ local LSM = AF.Libs.LSM
 local L = AF.L
 
 local strlower = string.lower
-local tinsert, tconcat = table.insert, table.concat
+local tinsert = table.insert
 
 ---------------------------------------------------------------------
 -- register media
 ---------------------------------------------------------------------
 -- fonts
-LSM:Register("font", "Noto_AP", AF.GetFont("NotoSansCJKsc_AP"), 255)
-LSM:Register("font", "Noto_Dolphin", AF.GetFont("NotoSansCJKsc_Dolphin"), 255)
+local extraMedia = _G.AbstractFramework_ExtraMedia
+local fontAddon = extraMedia and extraMedia.name
+local fontLocaleMask = fontAddon and 255 or (LSM.LOCALE_BIT_western + LSM.LOCALE_BIT_ruRU)
+
+LSM:Register("font", "Noto_AP", AF.GetFont("NotoSansCJKsc_AP", fontAddon), fontLocaleMask)
+LSM:Register("font", "Noto_Dolphin", AF.GetFont("NotoSansCJKsc_Dolphin", fontAddon), fontLocaleMask)
 LSM:Register("font", "Accidental Presidency", AF.GetFont("Accidental_Presidency"), 255)
 LSM:Register("font", "Cal Sans", AF.GetFont("CalSans"), 255)
 LSM:Register("font", "Dolphin", AF.GetFont("Dolphin"), 255)
 LSM:Register("font", "Emblem", AF.GetFont("Emblem"), 255)
 LSM:Register("font", "Expressway", AF.GetFont("Expressway"), 255)
 LSM:Register("font", "Visitor", AF.GetFont("Visitor"), 255)
-LSM:Register("font", "Unifont", AF.GetFont("Unifont.otf"), 255)
+LSM:Register("font", "Unifont", AF.GetFont("Unifont.otf", fontAddon), fontLocaleMask)
 
 -- statusbar
 LSM:Register("statusbar", "AF Plain", AF.GetPlainTexture())

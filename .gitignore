@@ -6,6 +6,8 @@ Libs/*
 
 # excluded
 !.release/*.sh
+!.release/build_western_fonts.py
+!.release/requirements-fonts.txt
 !Libs/md5.lua
 !Libs/sha256.lua
 !Libs/base64.lua

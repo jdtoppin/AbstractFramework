@@ -10,6 +10,9 @@ on:
     tags:
       - '**'
 
+permissions:
+  contents: write
+
 # a workflow is built up as jobs, and within these jobs are steps
 jobs:
 
@@ -42,3 +45,11 @@ jobs:
       # once cloned, we just run the GitHub Action for the packager project
       - name: Create Package
         uses: BigWigsMods/packager@v2
+
+      - name: Create optional ExtraMedia package
+        run: bash .release/package_extra_media.sh "$GITHUB_REF_NAME"
+
+      - name: Upload ExtraMedia to the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" .release/AbstractFramework_ExtraMedia-*.zip --clobber

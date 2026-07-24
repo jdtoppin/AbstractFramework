@@ -2,6 +2,14 @@ name: Build Development Package
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.pkgmeta'
+      - '.github/workflows/package.yml'
+      - '.release/package_extra_media.sh'
+      - 'AbstractFramework.toc'
+      - 'Media/Fonts/**'
+      - 'ExtraMedia/**'
 
 permissions:
   contents: read
@@ -23,6 +31,9 @@ jobs:
         uses: BigWigsMods/packager@v2
         with:
           args: -d
+
+      - name: Build optional ExtraMedia package
+        run: bash .release/package_extra_media.sh
 
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
