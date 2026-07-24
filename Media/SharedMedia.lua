@@ -4,7 +4,7 @@ local LSM = AF.Libs.LSM
 local L = AF.L
 
 local strlower = string.lower
-local tinsert, tconcat = table.insert, table.concat
+local tinsert = table.insert
 
 ---------------------------------------------------------------------
 -- register media
