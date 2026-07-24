@@ -109,26 +109,12 @@ end
 ---------------------------------------------------------------------
 -- circular icon helpers
 ---------------------------------------------------------------------
--- Small icons use centered 36 px art inside a power-of-two 64 px carrier.
+-- Small icons use 32 px power-of-two art optimized for 36 px icon regions.
 local CIRCULAR_ICON_SMALL_MAX_SIZE = 50
-local CIRCULAR_ICON_SMALL_TEX_COORD = 14 / 64
-local CIRCULAR_ICON_SMALL_TEX_COORD_END = 50 / 64
 
 local function IsSmallCircularIcon(region)
     local width = region:GetWidth()
     return width > 0 and width < CIRCULAR_ICON_SMALL_MAX_SIZE
-end
-
-local function ApplyCircularIconTexCoord(texture, isSmall)
-    if isSmall then
-        texture:SetTexCoord(
-            CIRCULAR_ICON_SMALL_TEX_COORD,
-            CIRCULAR_ICON_SMALL_TEX_COORD_END,
-            CIRCULAR_ICON_SMALL_TEX_COORD,
-            CIRCULAR_ICON_SMALL_TEX_COORD_END)
-    else
-        AF.ClearTexCoord(texture)
-    end
 end
 
 ---@param mask MaskTexture
@@ -137,7 +123,6 @@ function AF.ApplyCircularIconMask(mask, relativeTo)
     local isSmall = IsSmallCircularIcon(relativeTo or mask)
     local texture = isSmall and "Circle_IconMask_36" or "Circle_IconMask"
     mask:SetTexture(AF.GetTexture(texture), "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE", "LINEAR")
-    ApplyCircularIconTexCoord(mask, isSmall)
 end
 
 ---@param texture Texture
@@ -163,7 +148,6 @@ function AF.CreateCircularIconBorder(parent, relativeTo, color, drawLayer, subLe
     local border = AF.CreateTexture(
         parent, AF.GetIcon(texture), color or "border", drawLayer or "OVERLAY", subLevel, nil, nil, "LINEAR")
     border:SetAllPoints(relativeTo)
-    ApplyCircularIconTexCoord(border, isSmall)
     return border
 end
 
