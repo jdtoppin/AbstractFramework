@@ -109,22 +109,45 @@ end
 ---------------------------------------------------------------------
 -- circular icon helpers
 ---------------------------------------------------------------------
+local BLIZZARD_CIRCLE_MASK_ATLAS = "talents-node-circle-mask"
+
+local function HasBlizzardCircleMask()
+    return C_Texture.GetAtlasExists and C_Texture.GetAtlasExists(BLIZZARD_CIRCLE_MASK_ATLAS)
+end
+
+local function DisableCircularTextureSnap(texture)
+    if texture.SetSnapToPixelGrid then
+        texture:SetSnapToPixelGrid(false)
+        texture:SetTexelSnappingBias(0)
+    end
+end
+
 ---@param mask MaskTexture
----@param _relativeTo Region|nil retained for API compatibility
-function AF.ApplyCircularIconMask(mask, _relativeTo)
-    mask:SetTexture(
-        AF.GetTexture("Circle_IconMask"),
-        "CLAMPTOBLACKADDITIVE",
-        "CLAMPTOBLACKADDITIVE",
-        "TRILINEAR")
+---@param relativeTo Region|nil
+---@param inset number|nil
+function AF.ApplyCircularIconMask(mask, relativeTo, inset)
+    if HasBlizzardCircleMask() then
+        mask:SetAtlas(BLIZZARD_CIRCLE_MASK_ATLAS, false, "TRILINEAR")
+    else
+        mask:SetTexture(
+            AF.GetTexture("Circle_IconMask"),
+            "CLAMPTOBLACKADDITIVE",
+            "CLAMPTOBLACKADDITIVE",
+            "TRILINEAR")
+    end
+
+    DisableCircularTextureSnap(mask)
+    if relativeTo then
+        AF.SetInside(mask, relativeTo, inset or 0)
+    end
 end
 
 ---@param texture Texture
+---@param inset number|nil
 ---@return MaskTexture mask
-function AF.CreateCircularMask(texture)
+function AF.CreateCircularMask(texture, inset)
     local mask = texture:GetParent():CreateMaskTexture()
-    mask:SetAllPoints(texture)
-    AF.ApplyCircularIconMask(mask, texture)
+    AF.ApplyCircularIconMask(mask, texture, inset)
     texture:AddMaskTexture(mask)
     return mask
 end
@@ -137,17 +160,15 @@ end
 ---@return AF_Texture border
 function AF.CreateCircularIconBorder(parent, relativeTo, color, drawLayer, subLevel)
     relativeTo = relativeTo or parent
-    -- The asset is a solid circle drawn behind the inset icon mask, exposing a smooth thin rim.
     local border = AF.CreateTexture(
-        parent,
-        AF.GetIcon("Circle_Thin"),
-        color or "border",
-        drawLayer or "BACKGROUND",
-        subLevel,
-        nil,
-        nil,
-        "TRILINEAR")
+        parent, AF.GetPlainTexture(), color or "border", drawLayer or "BACKGROUND", subLevel)
+    DisableCircularTextureSnap(border)
     border:SetAllPoints(relativeTo)
+
+    border.mask = parent:CreateMaskTexture()
+    AF.ApplyCircularIconMask(border.mask, relativeTo)
+    border:AddMaskTexture(border.mask)
+
     return border
 end
 
