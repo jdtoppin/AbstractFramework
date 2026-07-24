@@ -107,6 +107,32 @@ function AF.ClearTexCoord(tex)
 end
 
 ---------------------------------------------------------------------
+-- circular icon helpers
+---------------------------------------------------------------------
+---@param texture Texture
+---@return MaskTexture mask
+function AF.CreateCircularMask(texture)
+    local mask = texture:GetParent():CreateMaskTexture()
+    mask:SetTexture(AF.GetTexture("Circle"), "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetAllPoints(texture)
+    texture:AddMaskTexture(mask)
+    return mask
+end
+
+---@param parent Frame
+---@param relativeTo Region|nil defaults to parent
+---@param color table|string|nil defaults to "border"
+---@param drawLayer DrawLayer|nil defaults to "OVERLAY"
+---@param subLevel number|nil
+---@return AF_Texture border
+function AF.CreateCircularIconBorder(parent, relativeTo, color, drawLayer, subLevel)
+    local border = AF.CreateTexture(
+        parent, AF.GetIcon("Circle_Thin"), color or "border", drawLayer or "OVERLAY", subLevel)
+    border:SetAllPoints(relativeTo or parent)
+    return border
+end
+
+---------------------------------------------------------------------
 -- calc texcoord
 ---------------------------------------------------------------------
 ---calculates texture coordinates with adjustments for aspect ratio and cropping
@@ -129,10 +155,9 @@ function AF.CalcTexCoordPreCrop(crop, targetAspectRatio, originalAspectRatio, an
     }
 
     targetAspectRatio = targetAspectRatio or 1
+    -- In most cases, the original aspect ratio is 1.
     if originalAspectRatio then
         targetAspectRatio = targetAspectRatio / originalAspectRatio
-    else
-        -- in most cases, the original aspect ratio is 1
     end
 
     local xRatio = targetAspectRatio < 1 and targetAspectRatio or 1
