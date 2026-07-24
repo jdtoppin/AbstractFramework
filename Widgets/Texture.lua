@@ -111,7 +111,7 @@ end
 ---------------------------------------------------------------------
 ---@param mask MaskTexture
 function AF.ApplyCircularIconMask(mask)
-    mask:SetTexture(AF.GetTexture("Circle_IconMask"), "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetTexture(AF.GetTexture("Circle_IconMask"), "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE", "LINEAR")
 end
 
 ---@param texture Texture
@@ -132,7 +132,7 @@ end
 ---@return AF_Texture border
 function AF.CreateCircularIconBorder(parent, relativeTo, color, drawLayer, subLevel)
     local border = AF.CreateTexture(
-        parent, AF.GetIcon("Circle_Thin"), color or "border", drawLayer or "OVERLAY", subLevel)
+        parent, AF.GetIcon("Circle_Thin"), color or "border", drawLayer or "OVERLAY", subLevel, nil, nil, "LINEAR")
     border:SetAllPoints(relativeTo or parent)
     return border
 end
