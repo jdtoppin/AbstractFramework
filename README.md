@@ -22,6 +22,12 @@ It's easy to use and ensures pixel-perfect precision, making it ideal for develo
 
 Demo: `/abstract` or `/afw` or `/af`
 
+## Optional font coverage
+
+The core addon includes compact Latin, Greek, Cyrillic, punctuation, and symbol variants of `Noto_AP`, `Noto_Dolphin`, and `Unifont`.
+
+Install the separately packaged `AbstractFramework_ExtraMedia` addon for full Chinese, Japanese, Korean, and broader Unicode coverage. The LibSharedMedia font names remain the same, so existing addon profiles continue to use their saved font selections.
+
 ## VS Code
 
 1. Clone this repository to your local computer or install the addon directly.

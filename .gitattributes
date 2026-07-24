@@ -1,5 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 
-# Keep development-only assets out of downloadable source archives.
+# Keep development-only and separately packaged assets out of source archives.
 /.unused export-ignore
+/ExtraMedia export-ignore

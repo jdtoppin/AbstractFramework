@@ -5,7 +5,7 @@
 ## DefaultState: enabled
 ## IconTexture: Interface\AddOns\AbstractFramework\Media\Icons\AF
 ## SavedVariables: AFConfig
-## OptionalDeps: Blizzard_AuraContainer
+## OptionalDeps: Blizzard_AuraContainer, AbstractFramework_ExtraMedia
 
 ## X-Curse-Project-ID: 1131087
 ## X-Wago-ID: mKOv2E6x
