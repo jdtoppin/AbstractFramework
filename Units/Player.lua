@@ -4,7 +4,6 @@ local AF = select(2, ...)
 local BNGetInfo = BNGetInfo
 local UnitName = UnitName
 local UnitClass = UnitClass
-local NativeUnitClassBase = UnitClassBase
 local UnitLevel = UnitLevel
 local UnitGUID = UnitGUID
 local UnitFactionGroup = UnitFactionGroup
@@ -23,11 +22,6 @@ local GetSpecializationInfo = C_SpecializationInfo.GetSpecializationInfo
 ---@return string classFileName
 ---@return number classID
 function AF.UnitClassBase(unit)
-    -- Retail 12.0.7.68887 UnitDocumentation.lua: UnitClassBase returns the
-    -- underlying class instead of the cosmetic override used by UnitClass.
-    if NativeUnitClassBase then
-        return NativeUnitClassBase(unit)
-    end
     return select(2, UnitClass(unit))
 end
 

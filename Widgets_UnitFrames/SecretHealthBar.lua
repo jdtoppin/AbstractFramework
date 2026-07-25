@@ -1,7 +1,7 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
 
-local UnitClassBase = UnitClassBase
+local UnitClassBase = AF.UnitClassBase
 local UnitGetDetailedHealPrediction = UnitGetDetailedHealPrediction
 local UnitHasVehicleUI = UnitHasVehicleUI
 local UnitHealth = UnitHealth
