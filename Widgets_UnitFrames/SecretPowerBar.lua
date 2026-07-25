@@ -1,7 +1,7 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
 
-local UnitClassBase = UnitClassBase
+local UnitClassBase = AF.UnitClassBase
 local UnitIsConnected = UnitIsConnected
 local UnitPower = UnitPower
 local UnitPowerMax = UnitPowerMax

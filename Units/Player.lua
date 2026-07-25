@@ -20,7 +20,7 @@ local GetSpecializationInfo = C_SpecializationInfo.GetSpecializationInfo
 ---------------------------------------------------------------------
 ---@param unit string
 ---@return string classFileName
----@return string classID
+---@return number classID
 function AF.UnitClassBase(unit)
     return select(2, UnitClass(unit))
 end
