@@ -38,8 +38,10 @@ end
 
 local function ClearRegions(regions)
     for _, region in ipairs(regions) do
-        region:SetAlpha(0)
-        region:SetVertexColor(1, 1, 1, 1)
+        -- Keep the last carrier color intact while hidden. Resetting the
+        -- texture to white makes any delayed/native visibility update flash
+        -- a white full-bar overlay before the next color refresh.
+        region:SetAlphaFromBoolean(false, 1, 0)
     end
 end
 
@@ -119,13 +121,13 @@ end
 local function SetSemanticCarrier(regions, color, alpha)
     for _, region in ipairs(regions) do
         region:SetVertexColor(AF.UnpackColor(color))
-        region:SetAlpha(alpha)
+        region:SetAlphaFromBoolean(true, alpha, 0)
     end
 end
 
 local function SetSemanticNameCarrier(nameOverlay, color, alpha)
     nameOverlay:SetTextColor(AF.UnpackColor(color))
-    nameOverlay:SetAlpha(alpha)
+    nameOverlay:SetAlphaFromBoolean(true, alpha, 0)
 end
 
 local function TryGetThreatSituation(subjectUnit, mobUnit)
@@ -380,7 +382,7 @@ local function ShowSemanticState(indicator, state)
             indicator.nameAlpha
         )
     elseif indicator.nameOverlay then
-        indicator.nameOverlay:SetAlpha(0)
+        indicator.nameOverlay:SetAlphaFromBoolean(false, 1, 0)
     end
 end
 
@@ -509,7 +511,7 @@ function AF_SecretNamePlateThreatIndicatorMixin:ClearVisuals()
     ClearRegions(self.glowRegions)
     ClearRegions(self.barRegions)
     if self.nameOverlay then
-        self.nameOverlay:SetAlpha(0)
+        self.nameOverlay:SetAlphaFromBoolean(false, 1, 0)
     end
 end
 
@@ -605,7 +607,7 @@ function AF_SecretNamePlateThreatIndicatorMixin:Refresh()
             self.customColor
         )
     elseif self.nameOverlay then
-        self.nameOverlay:SetAlpha(0)
+        self.nameOverlay:SetAlphaFromBoolean(false, 1, 0)
     end
 end
 
@@ -708,7 +710,7 @@ end
 ---@param nameOverlay FontString?
 function AF_SecretNamePlateThreatIndicatorMixin:SetNameOverlay(nameOverlay)
     if self.nameOverlay then
-        self.nameOverlay:SetAlpha(0)
+        self.nameOverlay:SetAlphaFromBoolean(false, 1, 0)
     end
     self.nameOverlay = nameOverlay
     self:Refresh()
