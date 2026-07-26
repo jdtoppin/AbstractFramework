@@ -384,6 +384,89 @@ AF.hasCustomAuraContainer = _G.C_AuraContainerUtil ~= nil
     and customDispelTypeTextureStyle ~= nil
     and customDispelTypeTextureStyle.PreserveAsset ~= nil
 
+local customAuraContainerConstructionTotals = {
+    containerCreateAttempts = 0,
+    containerAllocations = 0,
+    containerCreateCompletions = 0,
+    trackedContainers = 0,
+    externalContainersObserved = 0,
+    groupAddAttempts = 0,
+    groupsAdded = 0,
+    slotAddAttempts = 0,
+    slotsAdded = 0,
+    itemEnchantmentAddAttempts = 0,
+    itemEnchantmentsAdded = 0,
+    initialFrameReservationsAttempted = 0,
+    initialFrameReservationsCompleted = 0,
+}
+
+local customAuraContainerConstructionCounterFields = {
+    "containerCreateAttempts",
+    "containerAllocations",
+    "containerCreateCompletions",
+    "groupAddAttempts",
+    "groupsAdded",
+    "slotAddAttempts",
+    "slotsAdded",
+    "itemEnchantmentAddAttempts",
+    "itemEnchantmentsAdded",
+    "initialFrameReservationsAttempted",
+    "initialFrameReservationsCompleted",
+}
+
+-- Records must never keep a native container alive. Totals are intentionally
+-- cumulative and have no reset path so callers can compare monotonic snapshots
+-- around reload/build scenarios without changing the observed lifecycle.
+local customAuraContainerConstructionRecords = setmetatable({}, {__mode = "k"})
+
+-- Retail 12.1.0.68914 (wow-ui-source d3915c78) reserves ten frames in
+-- AddAuraGroup's initial batch and one frame for each slot/enchantment.
+-- Initializer callbacks for later lazy group batches are deliberately excluded.
+local customAuraGroupInitialFrameReservation = 10
+local customAuraSingleInitialFrameReservation = 1
+
+local function CreateCustomAuraContainerConstructionRecord(createdByAbstractFramework)
+    local record = {
+        createdByAbstractFramework = createdByAbstractFramework,
+    }
+    for _, field in ipairs(customAuraContainerConstructionCounterFields) do
+        record[field] = 0
+    end
+    return record
+end
+
+local function TrackCustomAuraContainerConstruction(container, createdByAbstractFramework)
+    local record = customAuraContainerConstructionRecords[container]
+    if record then
+        return record
+    end
+
+    record = CreateCustomAuraContainerConstructionRecord(createdByAbstractFramework)
+    customAuraContainerConstructionRecords[container] = record
+    customAuraContainerConstructionTotals.trackedContainers =
+        customAuraContainerConstructionTotals.trackedContainers + 1
+    if not createdByAbstractFramework then
+        customAuraContainerConstructionTotals.externalContainersObserved =
+            customAuraContainerConstructionTotals.externalContainersObserved + 1
+    end
+    return record
+end
+
+local function IncrementCustomAuraContainerConstruction(record, field, amount)
+    amount = amount or 1
+    customAuraContainerConstructionTotals[field] =
+        customAuraContainerConstructionTotals[field] + amount
+    record[field] = record[field] + amount
+end
+
+local function CopyCustomAuraContainerConstructionCounters(source)
+    local snapshot = {}
+    for _, field in ipairs(customAuraContainerConstructionCounterFields) do
+        snapshot[field] = source[field]
+    end
+    return snapshot
+end
+
 local function AssertCustomAuraContainer()
     assert(AF.hasCustomAuraContainer, "12.1 CustomAuraContainerTemplate is unavailable")
 end
@@ -397,7 +480,7 @@ local function CreateCustomAuraDurationTextBinding()
     return binding
 end
 
-local function InitializeCustomAuraButton(button, style)
+local function InitializeCustomAuraButton(button, style, anchor)
     if not style.noBorder then
         -- BackdropTemplate has an OnSizeChanged Lua layout path. Custom aura
         -- geometry may be secret, so use scriptless child textures instead.
@@ -412,6 +495,17 @@ local function InitializeCustomAuraButton(button, style)
 
     if style.width and style.height then
         AF.SetSize(button, style.width, style.height)
+    end
+
+    if anchor then
+        button:ClearAllPoints()
+        button:SetPoint(
+            anchor.point,
+            anchor.relativeTo,
+            anchor.relativePoint,
+            anchor.x,
+            anchor.y
+        )
     end
 
     local icon = button:CreateTexture(nil, "ARTWORK")
@@ -508,8 +602,19 @@ local function InitializeCustomAuraButton(button, style)
     end
 end
 
-local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle)
-    local options = AF.Copy(buttonOptions or {})
+local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle, anchor, stripAnchor)
+    local options
+    if stripAnchor then
+        local nativeOptions = {}
+        for key, value in pairs(buttonOptions or {}) do
+            if key ~= "anchor" then
+                nativeOptions[key] = value
+            end
+        end
+        options = AF.Copy(nativeOptions)
+    else
+        options = AF.Copy(buttonOptions or {})
+    end
     local style = AF.Copy(buttonStyle or {})
     assert(options.initializeFrame == nil, "initializeFrame is managed by AbstractFramework")
     assert(options.templateNames == nil, "templateNames are managed by AbstractFramework")
@@ -528,9 +633,51 @@ local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle)
     end
 
     options.initializeFrame = function(button)
-        InitializeCustomAuraButton(button, style)
+        InitializeCustomAuraButton(button, style, anchor)
     end
     return options
+end
+
+local function GetCustomAuraSlotAnchor(container, slotOptions)
+    local anchor = slotOptions and slotOptions.anchor
+    if anchor == nil then
+        return nil
+    end
+
+    assert(type(anchor) == "table", "anchor must be a table")
+    assert(type(anchor.point) == "string" and anchor.point ~= "",
+        "anchor.point must be a non-empty string")
+
+    local relativePoint = anchor.relativePoint
+    local relativeTo = anchor.relativeTo
+    local x = anchor.x
+    local y = anchor.y
+    if relativePoint == nil then
+        relativePoint = anchor.point
+    end
+    if relativeTo == nil then
+        relativeTo = container
+    end
+    if x == nil then
+        x = 0
+    end
+    if y == nil then
+        y = 0
+    end
+    assert(type(relativePoint) == "string" and relativePoint ~= "",
+        "anchor.relativePoint must be a non-empty string")
+    assert(type(x) == "number", "anchor.x must be a number")
+    assert(type(y) == "number", "anchor.y must be a number")
+
+    -- Keep the trusted frame reference by identity. Deep-copy only the scalar
+    -- point data, and default to a container-relative anchor for simple slots.
+    return {
+        point = anchor.point,
+        relativeTo = relativeTo,
+        relativePoint = relativePoint,
+        x = x,
+        y = y,
+    }
 end
 
 ---@return boolean
@@ -538,20 +685,58 @@ function AF.HasCustomAuraContainer()
     return AF.hasCustomAuraContainer
 end
 
+---@return table totals
+function AF.GetCustomAuraContainerConstructionTotals()
+    local snapshot =
+        CopyCustomAuraContainerConstructionCounters(customAuraContainerConstructionTotals)
+    snapshot.trackedContainers = customAuraContainerConstructionTotals.trackedContainers
+    snapshot.externalContainersObserved =
+        customAuraContainerConstructionTotals.externalContainersObserved
+    return snapshot
+end
+
+---@param container Frame
+---@return table|nil stats
+function AF.GetCustomAuraContainerConstructionStats(container)
+    local record = customAuraContainerConstructionRecords[container]
+    if not record then
+        return nil
+    end
+
+    local snapshot = CopyCustomAuraContainerConstructionCounters(record)
+    snapshot.createdByAbstractFramework = record.createdByAbstractFramework
+    return snapshot
+end
+
 ---@return Frame container
 function AF.CreateCustomAuraContainer(parent, name, unit)
     AssertCustomAuraContainer()
 
+    customAuraContainerConstructionTotals.containerCreateAttempts =
+        customAuraContainerConstructionTotals.containerCreateAttempts + 1
     local container = CreateFrame("AuraContainer", name, parent, "CustomAuraContainerTemplate")
+    customAuraContainerConstructionTotals.containerAllocations =
+        customAuraContainerConstructionTotals.containerAllocations + 1
+    local construction =
+        TrackCustomAuraContainerConstruction(container, true)
+    construction.containerCreateAttempts = construction.containerCreateAttempts + 1
+    construction.containerAllocations = construction.containerAllocations + 1
+
     container:SetSize(1, 1)
     if unit ~= nil then
         container:SetUnit(unit)
     end
+
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "containerCreateCompletions"
+    )
     return container
 end
 
 function AF.SetCustomAuraContainerFlowLayout(container, layoutOptions)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
 
     local layout = AF.Copy(customAuraContainerLayoutDefaults, layoutOptions or {})
     container:SetFlowLayoutAxis(layout.axis)
@@ -563,26 +748,31 @@ end
 
 function AF.ResetCustomAuraContainerFlowLayout(container)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:ResetFlowLayoutOptions()
 end
 
 function AF.SetCustomAuraContainerUnit(container, unit)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetUnit(unit)
 end
 
 function AF.SetCustomAuraContainerEnabled(container, enabled)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetEnabled(enabled)
 end
 
 function AF.UpdateCustomAuraContainer(container)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:UpdateAllAuras()
 end
 
 function AF.SetCustomAuraContainerProcessingPolicy(container, processingPolicy, options)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetAuraProcessingPolicy(processingPolicy, options)
 end
 
@@ -590,53 +780,89 @@ function AF.AddCustomAuraGroup(container, groupKey, filterString, groupOptions, 
     AssertCustomAuraContainer()
 
     local options = GetCustomAuraButtonOptions(groupOptions, buttonStyle)
+    local construction = TrackCustomAuraContainerConstruction(container, false)
+    IncrementCustomAuraContainerConstruction(construction, "groupAddAttempts")
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "initialFrameReservationsAttempted",
+        customAuraGroupInitialFrameReservation
+    )
     container:AddAuraGroup(groupKey, filterString, options)
+    IncrementCustomAuraContainerConstruction(construction, "groupsAdded")
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "initialFrameReservationsCompleted",
+        customAuraGroupInitialFrameReservation
+    )
 end
 
 function AF.SetCustomAuraGroupFilterString(container, groupKey, filterString)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetAuraGroupFilterString(groupKey, filterString)
 end
 
 function AF.SetCustomAuraGroupMaxFrameCount(container, groupKey, maxFrameCount)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetAuraGroupMaxFrameCount(groupKey, maxFrameCount)
 end
 
 function AF.SetCustomAuraGroupCandidateFilters(container, groupKey, candidateFilters)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetAuraGroupCandidateFilters(groupKey, candidateFilters)
 end
 
 function AF.SetCustomAuraGroupSortMethod(container, groupKey, sortMethod, sortDirection)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetAuraGroupSortMethod(groupKey, sortMethod, sortDirection)
 end
 
 function AF.SetCustomAuraGroupLayout(container, groupKey, layoutOptions)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetAuraGroupLayout(groupKey, layoutOptions)
 end
 
 function AF.AddCustomAuraSlot(container, slotKey, filterString, slotOptions, buttonStyle)
     AssertCustomAuraContainer()
 
-    local options = GetCustomAuraButtonOptions(slotOptions, buttonStyle)
-    return container:AddAuraSlot(slotKey, filterString, options)
+    local anchor = GetCustomAuraSlotAnchor(container, slotOptions)
+    local options = GetCustomAuraButtonOptions(slotOptions, buttonStyle, anchor, true)
+    local construction = TrackCustomAuraContainerConstruction(container, false)
+    IncrementCustomAuraContainerConstruction(construction, "slotAddAttempts")
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "initialFrameReservationsAttempted",
+        customAuraSingleInitialFrameReservation
+    )
+    local button = container:AddAuraSlot(slotKey, filterString, options)
+    IncrementCustomAuraContainerConstruction(construction, "slotsAdded")
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "initialFrameReservationsCompleted",
+        customAuraSingleInitialFrameReservation
+    )
+    return button
 end
 
 function AF.SetCustomAuraSlotFilterString(container, slotKey, filterString)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetAuraSlotFilterString(slotKey, filterString)
 end
 
 function AF.SetCustomAuraSlotCandidateFilters(container, slotKey, candidateFilters)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetAuraSlotCandidateFilters(slotKey, candidateFilters)
 end
 
 function AF.SetCustomAuraSlotSortMethod(container, slotKey, sortMethod, sortDirection)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetAuraSlotSortMethod(slotKey, sortMethod, sortDirection)
 end
 
@@ -644,21 +870,44 @@ function AF.AddCustomItemEnchantment(container, itemEnchantmentSlot, enchantment
     AssertCustomAuraContainer()
 
     local options = GetCustomAuraButtonOptions(enchantmentOptions, buttonStyle)
-    return container:AddItemEnchantment(itemEnchantmentSlot, options)
+    local construction = TrackCustomAuraContainerConstruction(container, false)
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "itemEnchantmentAddAttempts"
+    )
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "initialFrameReservationsAttempted",
+        customAuraSingleInitialFrameReservation
+    )
+    local button = container:AddItemEnchantment(itemEnchantmentSlot, options)
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "itemEnchantmentsAdded"
+    )
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "initialFrameReservationsCompleted",
+        customAuraSingleInitialFrameReservation
+    )
+    return button
 end
 
 function AF.SetCustomItemEnchantmentSortMethod(container, sortMethod, sortDirection)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetItemEnchantmentSortMethod(sortMethod, sortDirection)
 end
 
 function AF.SetCustomItemEnchantmentLayout(container, layoutOptions)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:SetItemEnchantmentLayout(layoutOptions)
 end
 
 function AF.ResetCustomItemEnchantmentLayout(container)
     AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
     container:ResetItemEnchantmentLayout()
 end
 
