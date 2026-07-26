@@ -104,6 +104,16 @@ function AF_SecretCastBarMixin:SetUninterruptibleCastRegion(region)
     end
 end
 
+function AF_SecretCastBarMixin:SetInterruptibleCastRegion(region)
+    if self.interruptibleCastRegion then
+        self.interruptibleCastRegion:SetAlpha(0)
+    end
+    self.interruptibleCastRegion = region
+    if region then
+        region:SetAlpha(0)
+    end
+end
+
 function AF_SecretCastBarMixin:SetDurationText(fontString)
     self.durationText = fontString
     self.durationTextBinding:SetFontString(fontString)
@@ -211,6 +221,17 @@ function AF_SecretCastBarMixin:ApplyInterruptibilityState(
             0
         )
     end
+    -- SimpleRegion.SetAlphaFromBoolean is AllowedWhenTainted in the same
+    -- pinned Retail builds documented above. Inverting the native sink lets
+    -- consumers present mutually exclusive decorations without inspecting
+    -- the possibly secret interruptibility flag in Lua.
+    if self.interruptibleCastRegion then
+        self.interruptibleCastRegion:SetAlphaFromBoolean(
+            notInterruptible,
+            0,
+            1
+        )
+    end
 end
 
 function AF_SecretCastBarMixin:UpdateLiveCastSinks(
@@ -258,6 +279,9 @@ function AF_SecretCastBarMixin:ClearCastSinks()
     end
     if self.uninterruptibleCastRegion then
         self.uninterruptibleCastRegion:SetAlpha(0)
+    end
+    if self.interruptibleCastRegion then
+        self.interruptibleCastRegion:SetAlpha(0)
     end
     self:ApplyNormalCastColor()
 end
