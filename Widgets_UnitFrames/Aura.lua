@@ -52,7 +52,6 @@ local function CreateAuraDurationBar(parent, anchor)
     durationBar:SetStatusBarTexture(AF.GetPlainTexture())
     durationBar:SetStatusBarColor(0, 0, 0, 0.75)
     durationBar:Hide()
-
     return durationBar
 end
 
@@ -300,8 +299,9 @@ function AF.InitAura(button, noBorder, visibilityManagedExternally)
     cooldown.noCooldownCount = true
     cooldown:SetUseAuraDisplayTime(true)
 
-    -- Retail 12.0.7.68887 SimpleStatusBar:SetTimerDuration accepts the opaque
-    -- LuaDurationObject, so vertical styles do not inspect restricted time.
+    -- Retail 12.0.7.68887 and 12.1.0.68914
+    -- SimpleStatusBar:SetTimerDuration accept an opaque LuaDurationObject as a
+    -- secret argument, keeping vertical timing native.
     local durationBar = CreateAuraDurationBar(button, icon)
     button.durationBar = durationBar
 
@@ -360,6 +360,7 @@ local customDispelTypeTextureStyle = _G.Enum and Enum.CustomAuraButtonDispelType
 AF.hasCustomAuraContainer = _G.C_AuraContainerUtil ~= nil
     and C_AuraContainerUtil.ProcessCustomAuraButtonApplicationCountOptions ~= nil
     and C_AuraContainerUtil.ProcessCustomAuraButtonDispelTypeTextureOptions ~= nil
+    and C_AuraContainerUtil.ProcessCustomAuraButtonDurationBarOptions ~= nil
     and C_AuraContainerUtil.ProcessCustomAuraButtonDurationTextOptions ~= nil
     and _G.AuraContainerSortMethod ~= nil
     and _G.AuraContainerSortDirection ~= nil
@@ -927,7 +928,34 @@ function AF_SecretAuraListMixin:SetFilter(filter)
     self.filter = filter
 end
 
+local function AssertAuraMatchFilter(matchFilter)
+    if type(matchFilter) == "string" then
+        return
+    end
+
+    assert(type(matchFilter) == "table",
+        "aura match filter must be a string or descriptor")
+    assert(
+        type(matchFilter.filterString) == "string"
+            and matchFilter.filterString ~= "",
+        "aura match filter descriptor requires a non-empty filterString"
+    )
+    assert(matchFilter.matchWhenFilteredOut == true,
+        "aura match filter descriptor requires matchWhenFilteredOut=true")
+    for key in pairs(matchFilter) do
+        assert(
+            key == "filterString" or key == "matchWhenFilteredOut",
+            "aura match filter descriptor contains an unsupported field"
+        )
+    end
+end
+
 function AF_SecretAuraListMixin:SetMatchFilters(matchFilters)
+    assert(matchFilters == nil or type(matchFilters) == "table",
+        "aura match filters must be a table or nil")
+    for _, matchFilter in ipairs(matchFilters or {}) do
+        AssertAuraMatchFilter(matchFilter)
+    end
     self.matchFilters = matchFilters
 end
 
@@ -976,7 +1004,25 @@ function AF_SecretAuraListMixin:RefreshAuras()
             -- IsAuraFilteredOutByInstanceID returns an ordinary boolean. These
             -- checks classify the ID in C without reading restricted AuraData.
             for _, matchFilter in ipairs(self.matchFilters) do
-                if not IsAuraFilteredOutByInstanceID(self.unit, auraInstanceID, matchFilter) then
+                local match
+                if type(matchFilter) == "string" then
+                    match = not IsAuraFilteredOutByInstanceID(
+                        self.unit,
+                        auraInstanceID,
+                        matchFilter
+                    )
+                else
+                    -- Retail 12.0.7.68887 generated UnitAura documentation
+                    -- exposes this secret-argument C query as an ordinary bool.
+                    -- The descriptor selects its complement without reading
+                    -- AuraData or potentially secret source fields.
+                    match = IsAuraFilteredOutByInstanceID(
+                        self.unit,
+                        auraInstanceID,
+                        matchFilter.filterString
+                    )
+                end
+                if match then
                     include = true
                     break
                 end
