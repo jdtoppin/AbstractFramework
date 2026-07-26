@@ -21,7 +21,7 @@ local INTERRUPT_SPELLS = {
     DEATHKNIGHT = {47528},
     SHAMAN = {57994},
     MAGE = {2139},
-    WARLOCK = {89766, 119910, 132409},
+    WARLOCK = {89766, 19647, 119910, 132409},
     MONK = {116705},
     DRUID = {38675, 106839, 78675},
     DEMONHUNTER = {183752},
@@ -60,7 +60,10 @@ end
 AF.CreateBasicEventHandler(
     DelayedUpdateKnownInterrupts,
     "PLAYER_LOGIN",
-    "SPELLS_CHANGED"
+    "SPELLS_CHANGED",
+    "PLAYER_SPECIALIZATION_CHANGED",
+    "UNIT_PET",
+    "PET_BAR_UPDATE"
 )
 
 function AF.GetKnownInterruptSpells()
@@ -79,7 +82,8 @@ function AF.GetPrimaryInterruptCooldownDuration()
     -- LuaDurationObject. Consumers must forward its secret-capable accessors
     -- to native sinks rather than inspect the returned values in Lua.
     -- Interrupt readiness must not be suppressed by the global cooldown.
-    return spellID, GetSpellCooldownDuration(spellID, true)
+    local duration = GetSpellCooldownDuration(spellID, true)
+    return spellID, duration and duration:Copy()
 end
 
 function AF.InterruptUsable()
