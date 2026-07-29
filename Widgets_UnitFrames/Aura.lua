@@ -402,9 +402,10 @@ end
 -- Retail 12.1 custom aura containers
 ---------------------------------------------------------------------
 -- Retail 12.1.0.68914 (wow-ui-source d3915c78) replaces Retail's
--- SecureAuraHeaderTemplate with externally-instantiable AuraContainer and
--- CustomAuraButton intrinsics. Check the current exported schema rather than
--- probing protected frame creation or accepting the incompatible 68824 API.
+-- SecureAuraHeaderTemplate with externally-instantiable AuraContainers.
+-- Containers create and own their CustomAuraButtons; addons configure those
+-- buttons through initializeFrame. Check the current exported schema rather
+-- than probing protected frame creation or accepting the incompatible 68824 API.
 local customAuraContainerLayoutDefaults = _G.CustomAuraContainerLayoutDefaults
 local customAuraGroupDefaults = _G.CustomAuraContainerGroupDefaultOptions
 local customAuraGroupLayoutDefaults = _G.CustomAuraContainerGroupLayoutDefaultOptions
@@ -576,7 +577,8 @@ local function InitializeCustomAuraButton(button, style, anchor)
         icon:SetDesaturated(style.desaturated)
     end
 
-    -- CustomAuraButton denies tainted access after this initializer. Keep the
+    -- CustomAuraButton access restrictions are installed after this
+    -- initializer and deny tainted access while aura data is secret. Keep the
     -- static, ordinary configured color in a scriptless texture and complete
     -- its styling before registering any aura-driven regions.
     local blockColor = CopyAuraBlockColor(style.blockColor)
@@ -628,9 +630,10 @@ local function InitializeCustomAuraButton(button, style, anchor)
         dispelOverlay:Hide()
     end
 
-    -- Blizzard applies DenyTaintedAccessWhenAurasAreSecret immediately after
-    -- this initializer. Fully configure regions before attaching them, then
-    -- leave the live button opaque to addon code.
+    -- Blizzard installs DenyTaintedAccessWhenAurasAreSecret after this
+    -- initializer (or after the login bootstrap for early-created buttons).
+    -- Fully configure regions before attaching them, then avoid relying on
+    -- access to a live button while aura data is secret.
     button:SetIcon(icon)
     button:SetDurationCooldown(cooldown)
     button:SetDurationBar(durationBar, {

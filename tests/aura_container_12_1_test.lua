@@ -100,7 +100,10 @@ local function makeRegion(button)
     }
 
     local function style(name, ...)
-        assert(not button.denied, "styled a denied custom aura button")
+        assert(
+            button:CanBeAccessedInContext(),
+            "styled a child of an access-restricted custom aura button while auras are secret"
+        )
         button.sequence = button.sequence + 1
         button.lastRegionStyleSequence = button.sequence
         record(region.calls, name, ...)
@@ -227,10 +230,10 @@ local function makeRegion(button)
     return region
 end
 
-local function makeButton()
+local function makeButton(state)
     local button = {
+        accessRestricted = false,
         bindings = {},
-        denied = false,
         sequence = 0,
         lastRegionStyleSequence = 0,
         frames = {},
@@ -238,17 +241,32 @@ local function makeButton()
         scripts = {},
     }
 
+    local function canAccess()
+        return not button.accessRestricted or not state.aurasSecret
+    end
+
+    local function assertAccessible(action)
+        assert(
+            canAccess(),
+            action .. " an access-restricted custom aura button while auras are secret"
+        )
+    end
+
     local function style()
-        assert(not button.denied, "styled a denied custom aura button")
+        assertAccessible("styled")
         button.sequence = button.sequence + 1
         button.lastRegionStyleSequence = button.sequence
     end
 
     local function bind(name, ...)
-        assert(not button.denied, "bound a denied custom aura button")
+        assertAccessible("bound")
         button.sequence = button.sequence + 1
         button.firstBindingSequence = button.firstBindingSequence or button.sequence
         button.bindings[name] = pack(...)
+    end
+
+    function button:CanBeAccessedInContext()
+        return canAccess()
     end
 
     function button:SetSize()
@@ -320,18 +338,22 @@ local function makeButton()
     end
 
     function button:SetShown(shown)
+        assertAccessible("changed visibility on")
         self.shown = shown
     end
 
     function button:Show()
+        assertAccessible("showed")
         self.shown = true
     end
 
     function button:Hide()
+        assertAccessible("hid")
         self.shown = false
     end
 
     function button:SetScript(script, callback)
+        assertAccessible("set a script on")
         self.scripts[script] = callback
     end
 
@@ -354,11 +376,11 @@ local function makeContainer(state)
     end
 
     local function initialize(options)
-        local button = makeButton()
+        local button = makeButton(state)
         state.activeButton = button
         options.initializeFrame(button)
         state.activeButton = nil
-        button.denied = true
+        button.accessRestricted = true
         container.buttons[#container.buttons + 1] = button
         return button
     end
@@ -482,6 +504,8 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
         auraFilterCalls = {},
         auraInstanceIDs = {},
         filteredOut = {},
+        aurasSecret = false,
+        inCombat = false,
         allowLegacyAuraEnumeration = false,
         auraDataProviderSwitchCalls = 0,
         auraDataProviderResetCalls = 0,
@@ -639,6 +663,9 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
     }
     environment.CreateColor = function(...)
         return pack(...)
+    end
+    environment.InCombatLockdown = function()
+        return state.inCombat
     end
     environment.C_AuraContainerUtil = {
         ProcessCustomAuraButtonApplicationCountOptions = function() end,
@@ -990,11 +1017,11 @@ assertSnapshotEqual(
 
 local beforeDeferredInitializers = AF.GetCustomAuraContainerConstructionTotals()
 for _index = 1, 2 do
-    local deferredButton = makeButton()
+    local deferredButton = makeButton(state)
     state.activeButton = deferredButton
     copiedGroupOptions.initializeFrame(deferredButton)
     state.activeButton = nil
-    deferredButton.denied = true
+    deferredButton.accessRestricted = true
 end
 assertSnapshotEqual(
     AF.GetCustomAuraContainerConstructionTotals(),
@@ -1005,6 +1032,25 @@ assertSnapshotEqual(
 local firstButton = container.buttons[1]
 assert(firstButton.firstBindingSequence > firstButton.lastRegionStyleSequence,
     "custom aura regions were not fully styled before native registration")
+assertEqual(firstButton.accessRestricted, true,
+    "custom aura button access restriction installation")
+assertEqual(firstButton:CanBeAccessedInContext(), true,
+    "non-secret custom aura button access")
+local nonSecretAccess = pcall(firstButton.SetSize, firstButton, 22, 20)
+assertEqual(nonSecretAccess, true,
+    "non-secret custom aura button API access")
+state.aurasSecret = true
+assertEqual(firstButton:CanBeAccessedInContext(), false,
+    "secret custom aura button access")
+local secretAccess = pcall(firstButton.SetSize, firstButton, 24, 20)
+assertEqual(secretAccess, false,
+    "secret custom aura button API denial")
+state.aurasSecret = false
+assertEqual(firstButton:CanBeAccessedInContext(), true,
+    "restored non-secret custom aura button access")
+local restoredAccess = pcall(firstButton.SetSize, firstButton, 26, 20)
+assertEqual(restoredAccess, true,
+    "restored custom aura button API access")
 local icon = firstButton.bindings.SetIcon[1]
 local cooldown = firstButton.bindings.SetDurationCooldown[1]
 local blockBackground = firstButton.regions[4]
@@ -1289,7 +1335,7 @@ assertSnapshotEqual(
     "container lifecycle tuning must not grow construction"
 )
 
-local legacyAura = AF.InitAura(makeButton(), true)
+local legacyAura = AF.InitAura(makeButton(state), true)
 local legacyIcon = legacyAura.icon
 local legacyCooldown = legacyAura.cooldown
 local legacyDurationBar = legacyAura.durationBar
@@ -1654,5 +1700,55 @@ assertEqual(state.auraDataProviderSwitchCalls, 0, "native provider switch owners
 assertEqual(state.auraDataProviderResetCalls, 0, "native provider reset ownership")
 assertEqual(failureState.auraDataProviderSwitchCalls, 0, "failure provider switch ownership")
 assertEqual(failureState.auraDataProviderResetCalls, 0, "failure provider reset ownership")
+
+local combatAF, combatState = loadAuraModule(true, false)
+combatState.inCombat = true
+combatState.aurasSecret = true
+local combatContainer = combatAF.CreateCustomAuraContainer(
+    {},
+    "AFCombatAuraContainer",
+    "player"
+)
+combatAF.AddCustomAuraGroup(
+    combatContainer,
+    "combatHelpful",
+    "HELPFUL",
+    {maxFrameCount = 1},
+    {
+        noBorder = true,
+        width = 16,
+        height = 16,
+        cooldownStyle = "none",
+    }
+)
+assertEqual(combatContainer.buttons[1].accessRestricted, true,
+    "combat-created aura button access restriction installation")
+assertEqual(combatContainer.buttons[1]:CanBeAccessedInContext(), false,
+    "combat-created aura button secret access")
+assertSnapshotEqual(
+    combatAF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals({
+        containerCreateAttempts = 1,
+        containerAllocations = 1,
+        containerCreateCompletions = 1,
+        trackedContainers = 1,
+        groupAddAttempts = 1,
+        groupsAdded = 1,
+        initialFrameReservationsAttempted = 10,
+        initialFrameReservationsCompleted = 10,
+    }),
+    "combat container construction totals"
+)
+combatState.aurasSecret = false
+assertEqual(combatContainer.buttons[1]:CanBeAccessedInContext(), true,
+    "combat-created aura button restored access")
+local combatRestoredAccess = pcall(
+    combatContainer.buttons[1].SetSize,
+    combatContainer.buttons[1],
+    18,
+    18
+)
+assertEqual(combatRestoredAccess, true,
+    "combat-created aura button restored API access")
 
 print("aura_container_12_1_test: OK")
