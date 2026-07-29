@@ -2,10 +2,10 @@
 "use strict";
 
 /**
- * Import AbstractFramework's Housing Catalog icon family from Tabler Icons.
+ * Import AbstractFramework's Tabler icon families.
  *
  * Usage:
- *   node .utils/generate_housing_icons.cjs /path/to/tabler-icons-v3.46.0
+ *   node .utils/generate_tabler_icons.cjs /path/to/tabler-icons-v3.46.0
  *
  * The checked-in SVGs are the canonical 12.1+ assets. The generated 128px
  * RLE-TGA files keep the same artwork available to Retail 12.0.7 and older
@@ -19,7 +19,7 @@ let sharp;
 try {
     sharp = require("sharp");
 } catch {
-    throw new Error("The Housing icon generator requires sharp 0.34.5.");
+    throw new Error("The Tabler icon generator requires sharp 0.34.5.");
 }
 
 const TABLER_VERSION = "3.46.0";
@@ -60,6 +60,11 @@ const ICONS = {
     Housing_WallHangings: "photo",
     Housing_WallLights: "lamp-2",
     Housing_Windows: "window",
+    View_Reset: "restore",
+    View_RotateLeft: "rotate",
+    View_RotateRight: "rotate-clockwise",
+    View_ZoomIn: "zoom-in",
+    View_ZoomOut: "zoom-out",
 };
 
 function getTablerRoot() {
@@ -86,7 +91,7 @@ function getTablerRoot() {
     return absoluteRoot;
 }
 
-function normalizeSvg(source, housingName, tablerName) {
+function normalizeSvg(source, iconName, tablerName) {
     const withoutComments = source.replace(/<!--[\s\S]*?-->/g, "").trim();
     const match = withoutComments.match(/<svg[\s\S]*?>([\s\S]*?)<\/svg>/);
     if (!match) {
@@ -108,7 +113,7 @@ function normalizeSvg(source, housingName, tablerName) {
     // The expanded viewBox gives every 24-unit Tabler glyph the same optical
     // padding without introducing transforms that WoW's SVG parser must handle.
     return [
-        `<!-- ${housingName}: Tabler Icons v${TABLER_VERSION} ${tablerName}; MIT -->`,
+        `<!-- ${iconName}: Tabler Icons v${TABLER_VERSION} ${tablerName}; MIT -->`,
         '<svg xmlns="http://www.w3.org/2000/svg"',
         '  width="24"',
         '  height="24"',
@@ -210,7 +215,7 @@ function encodeRleTga(data, width, height) {
     return Buffer.concat(packets);
 }
 
-async function generateIcon(tablerRoot, housingName, tablerName) {
+async function generateIcon(tablerRoot, iconName, tablerName) {
     const sourcePath = path.join(
         tablerRoot,
         "icons",
@@ -223,10 +228,10 @@ async function generateIcon(tablerRoot, housingName, tablerName) {
 
     const svg = normalizeSvg(
         fs.readFileSync(sourcePath, "utf8"),
-        housingName,
+        iconName,
         tablerName,
     );
-    fs.writeFileSync(path.join(OUTPUT_DIR, `${housingName}.svg`), svg);
+    fs.writeFileSync(path.join(OUTPUT_DIR, `${iconName}.svg`), svg);
 
     const { data, info } = await sharp(Buffer.from(svg))
         .resize(OUTPUT_SIZE, OUTPUT_SIZE, { fit: "fill" })
@@ -235,15 +240,15 @@ async function generateIcon(tablerRoot, housingName, tablerName) {
         .toBuffer({ resolveWithObject: true });
 
     const tga = encodeRleTga(data, info.width, info.height);
-    fs.writeFileSync(path.join(OUTPUT_DIR, `${housingName}.tga`), tga);
+    fs.writeFileSync(path.join(OUTPUT_DIR, `${iconName}.tga`), tga);
 }
 
 async function main() {
     const tablerRoot = getTablerRoot();
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
-    for (const [housingName, tablerName] of Object.entries(ICONS)) {
-        await generateIcon(tablerRoot, housingName, tablerName);
+    for (const [iconName, tablerName] of Object.entries(ICONS)) {
+        await generateIcon(tablerRoot, iconName, tablerName);
     }
 }
 

@@ -21,10 +21,12 @@ end
 -- Static capability marker for consumers that can fall back when the shared
 -- Housing icon family is unavailable in an older framework build.
 AF.hasHousingIcons = true
+AF.hasViewIcons = true
 -- Frame:CreateVectorGraphics is absent in Retail 12.0.7.68887 and present in
 -- PTR 12.1.0.68914. The same 12.1 client accepts explicit SVG paths on regular
 -- Texture regions, which preserves texture tinting and the raster fallback.
-AF.hasHousingSVGIcons = UIParent and type(UIParent.CreateVectorGraphics) == "function" or false
+AF.hasSVGIcons = UIParent and type(UIParent.CreateVectorGraphics) == "function" or false
+AF.hasHousingSVGIcons = AF.hasSVGIcons
 
 ---@param icon string fileName
 ---@param addon? string addonFolderName
@@ -39,26 +41,40 @@ function AF.GetIcon(icon, addon)
     end
 end
 
+---@param icon string icon fileName without extension
+---@param forceRaster? boolean
+---@return string iconPath
+function AF.GetAdaptiveIcon(icon, forceRaster)
+    if AF.IsBlank(icon) then return "" end
+
+    local extension = not forceRaster and AF.hasSVGIcons and ".svg" or ".tga"
+    return AF.GetIcon(icon .. extension)
+end
+
+---@param texture Texture
+---@param icon string icon fileName without extension
+---@return boolean success
+function AF.SetAdaptiveIcon(texture, icon)
+    if not texture or AF.IsBlank(icon) then return false end
+
+    if AF.hasSVGIcons and texture:SetTexture(AF.GetAdaptiveIcon(icon)) then
+        return true
+    end
+    return texture:SetTexture(AF.GetAdaptiveIcon(icon, true))
+end
+
 ---@param icon string Housing icon fileName without extension
 ---@param forceRaster? boolean
 ---@return string iconPath
 function AF.GetHousingIcon(icon, forceRaster)
-    if AF.IsBlank(icon) then return "" end
-
-    local extension = not forceRaster and AF.hasHousingSVGIcons and ".svg" or ".tga"
-    return AF.GetIcon(icon .. extension)
+    return AF.GetAdaptiveIcon(icon, forceRaster)
 end
 
 ---@param texture Texture
 ---@param icon string Housing icon fileName without extension
 ---@return boolean success
 function AF.SetHousingIcon(texture, icon)
-    if not texture or AF.IsBlank(icon) then return false end
-
-    if AF.hasHousingSVGIcons and texture:SetTexture(AF.GetHousingIcon(icon)) then
-        return true
-    end
-    return texture:SetTexture(AF.GetHousingIcon(icon, true))
+    return AF.SetAdaptiveIcon(texture, icon)
 end
 
 ---@param icon string fileName

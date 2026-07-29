@@ -1,10 +1,10 @@
 Tabler Icons v3.46.0
 https://github.com/tabler/tabler-icons/releases/tag/v3.46.0
 
-The Housing_* SVG and TGA assets under Media/Icons are adapted from the
-Tabler Icons outline family. The SVG viewBox and color were normalized for
-AbstractFramework; the TGA files are raster fallbacks generated from those
-normalized SVGs.
+The Housing_* and View_* SVG and TGA assets under Media/Icons are adapted
+from the Tabler Icons outline family. The SVG viewBox and color were
+normalized for AbstractFramework; the TGA files are raster fallbacks
+generated from those normalized SVGs.
 
 MIT License
 
