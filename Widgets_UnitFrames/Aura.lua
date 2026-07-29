@@ -9,6 +9,10 @@ local GetUnitAuraInstanceIDs = C_UnitAuras.GetUnitAuraInstanceIDs
 local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
 local STATUS_BAR_IMMEDIATE = Enum.StatusBarInterpolation.Immediate
 local STATUS_BAR_ELAPSED_TIME = Enum.StatusBarTimerDirection.ElapsedTime
+local DEFAULT_AURA_BLOCK_RED = 0.5
+local DEFAULT_AURA_BLOCK_GREEN = 0.5
+local DEFAULT_AURA_BLOCK_BLUE = 0.5
+local DEFAULT_AURA_BLOCK_ALPHA = 1
 
 -- Retail 12.0.7.68887 and 12.1.0.68914 expose this formatter to
 -- DurationTextBinding, so secret remaining-time values stay entirely native
@@ -60,18 +64,50 @@ local function CreateAuraDurationBar(parent, anchor)
     return durationBar
 end
 
-local function SetupAuraCooldownStyle(icon, cooldown, durationBar, style)
+local function CopyAuraBlockColor(color)
+    if type(color) == "table"
+        and type(color[1]) == "number"
+        and type(color[2]) == "number"
+        and type(color[3]) == "number"
+        and type(color[4]) == "number"
+    then
+        return {color[1], color[2], color[3], color[4]}
+    end
+
+    return {
+        DEFAULT_AURA_BLOCK_RED,
+        DEFAULT_AURA_BLOCK_GREEN,
+        DEFAULT_AURA_BLOCK_BLUE,
+        DEFAULT_AURA_BLOCK_ALPHA,
+    }
+end
+
+local function CreateAuraBlockBackground(parent, anchor, blockColor)
+    local background = parent:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints(anchor)
+    background:SetColorTexture(unpack(blockColor))
+    background:Hide()
+    return background
+end
+
+local function SetupAuraCooldownStyle(
+    icon,
+    cooldown,
+    durationBar,
+    blockBackground,
+    style,
+    blockColor
+)
     local isVertical = style == "vertical" or style == "block_vertical"
     local isBlockVertical = style == "block_vertical"
+    local isBlockClock = style:find("^block_clock") ~= nil
+    local isBlock = isBlockVertical or isBlockClock
     cooldown:SetShown(style ~= "none" and not isVertical)
     cooldown:SetDrawEdge(style:find("edge$") ~= nil)
     durationBar:SetShown(isVertical)
-    durationBar:SetStatusBarColor(
-        isBlockVertical and 0.5 or 0,
-        isBlockVertical and 0.5 or 0,
-        isBlockVertical and 0.5 or 0,
-        isBlockVertical and 1 or 0.75
-    )
+    durationBar:SetStatusBarColor(0, 0, 0, 0.75)
+    blockBackground:SetColorTexture(unpack(blockColor))
+    blockBackground:SetShown(isBlock)
     icon:SetShown(style:find("^block") == nil)
 end
 
@@ -113,7 +149,9 @@ local function SetAuraTimer(aura, duration)
             aura.icon,
             aura.cooldown,
             aura.durationBar,
-            aura.cooldownStyle
+            aura.blockBackground,
+            aura.cooldownStyle,
+            aura.blockColor
         )
     end
 end
@@ -218,9 +256,17 @@ function AF_SecretAuraMixin:SetVisibilityManagedExternally(managed)
     self.visibilityManagedExternally = managed
 end
 
-function AF_SecretAuraMixin:SetCooldownStyle(style)
+function AF_SecretAuraMixin:SetCooldownStyle(style, blockColor)
     self.cooldownStyle = style
-    SetupAuraCooldownStyle(self.icon, self.cooldown, self.durationBar, style)
+    self.blockColor = CopyAuraBlockColor(blockColor)
+    SetupAuraCooldownStyle(
+        self.icon,
+        self.cooldown,
+        self.durationBar,
+        self.blockBackground,
+        style,
+        self.blockColor
+    )
 end
 
 function AF_SecretAuraMixin:SetupDurationText(config)
@@ -292,6 +338,11 @@ function AF.InitAura(button, noBorder, visibilityManagedExternally)
     icon:SetAllPoints()
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
+    local blockColor = CopyAuraBlockColor()
+    local blockBackground = CreateAuraBlockBackground(button, icon, blockColor)
+    button.blockColor = blockColor
+    button.blockBackground = blockBackground
+
     local cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
     button.cooldown = cooldown
     AF.SetFrameLevel(cooldown, 1, button)
@@ -351,9 +402,10 @@ end
 -- Retail 12.1 custom aura containers
 ---------------------------------------------------------------------
 -- Retail 12.1.0.68914 (wow-ui-source d3915c78) replaces Retail's
--- SecureAuraHeaderTemplate with externally-instantiable AuraContainer and
--- CustomAuraButton intrinsics. Check the current exported schema rather than
--- probing protected frame creation or accepting the incompatible 68824 API.
+-- SecureAuraHeaderTemplate with externally-instantiable AuraContainers.
+-- Containers create and own their CustomAuraButtons; addons configure those
+-- buttons through initializeFrame. Check the current exported schema rather
+-- than probing protected frame creation or accepting the incompatible 68824 API.
 local customAuraContainerLayoutDefaults = _G.CustomAuraContainerLayoutDefaults
 local customAuraGroupDefaults = _G.CustomAuraContainerGroupDefaultOptions
 local customAuraGroupLayoutDefaults = _G.CustomAuraContainerGroupLayoutDefaultOptions
@@ -525,6 +577,13 @@ local function InitializeCustomAuraButton(button, style, anchor)
         icon:SetDesaturated(style.desaturated)
     end
 
+    -- CustomAuraButton access restrictions are installed after this
+    -- initializer and deny tainted access while aura data is secret. Keep the
+    -- static, ordinary configured color in a scriptless texture and complete
+    -- its styling before registering any aura-driven regions.
+    local blockColor = CopyAuraBlockColor(style.blockColor)
+    local blockBackground = CreateAuraBlockBackground(button, icon, blockColor)
+
     local cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
     AF.SetFrameLevel(cooldown, 1, button)
     cooldown:SetAllPoints(icon)
@@ -537,7 +596,14 @@ local function InitializeCustomAuraButton(button, style, anchor)
     cooldown:SetUseAuraDisplayTime(true)
 
     local durationBar = CreateAuraDurationBar(button, icon)
-    SetupAuraCooldownStyle(icon, cooldown, durationBar, style.cooldownStyle or "none")
+    SetupAuraCooldownStyle(
+        icon,
+        cooldown,
+        durationBar,
+        blockBackground,
+        style.cooldownStyle or "none",
+        blockColor
+    )
 
     local overlayFrame = CreateFrame("Frame", nil, button)
     AF.SetFrameLevel(overlayFrame, 2, button)
@@ -564,9 +630,10 @@ local function InitializeCustomAuraButton(button, style, anchor)
         dispelOverlay:Hide()
     end
 
-    -- Blizzard applies DenyTaintedAccessWhenAurasAreSecret immediately after
-    -- this initializer. Fully configure regions before attaching them, then
-    -- leave the live button opaque to addon code.
+    -- Blizzard installs DenyTaintedAccessWhenAurasAreSecret after this
+    -- initializer (or after the login bootstrap for early-created buttons).
+    -- Fully configure regions before attaching them, then avoid relying on
+    -- access to a live button while aura data is secret.
     button:SetIcon(icon)
     button:SetDurationCooldown(cooldown)
     button:SetDurationBar(durationBar, {
