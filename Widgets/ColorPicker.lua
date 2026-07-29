@@ -8,7 +8,7 @@ local AF = select(2, ...)
 local AF_ColorPickerMixin = {}
 
 function AF_ColorPickerMixin:EnableAlpha(enabled)
-    AF.HideColorPicker()
+    AF.CancelColorPicker(self)
     self.alphaEnabled = enabled
 end
 
@@ -53,6 +53,21 @@ function AF_ColorPickerMixin:SetOnConfirm(callback)
     self.onConfirm = callback
 end
 
+---@param callback fun(r: number, g: number, b: number, a: number)
+function AF_ColorPickerMixin:SetOnCancel(callback)
+    self.onCancel = callback
+end
+
+---@param callback fun(r: number, g: number, b: number, a: number)
+function AF_ColorPickerMixin:SetOnDiscard(callback)
+    self.onDiscard = callback
+end
+
+---@param callback fun(r: number, g: number, b: number, a: number)
+function AF_ColorPickerMixin:SetOnAccept(callback)
+    self.onAccept = callback
+end
+
 ---@private
 function AF_ColorPickerMixin:UpdatePixels()
     AF.DefaultUpdatePixels(self)
@@ -68,8 +83,20 @@ end
 ---@param alphaEnabled? boolean
 ---@param onChange? fun(r: number, g: number, b: number, a: number)
 ---@param onConfirm? fun(r: number, g: number, b: number, a: number)
+---@param onCancel? fun(r: number, g: number, b: number, a: number)
+---@param onDiscard? fun(r: number, g: number, b: number, a: number)
+---@param onAccept? fun(r: number, g: number, b: number, a: number)
 ---@return AF_ColorPicker cp
-function AF.CreateColorPicker(parent, label, alphaEnabled, onChange, onConfirm)
+function AF.CreateColorPicker(
+    parent,
+    label,
+    alphaEnabled,
+    onChange,
+    onConfirm,
+    onCancel,
+    onDiscard,
+    onAccept
+)
     local cp = CreateFrame("Button", nil, parent, "BackdropTemplate")
     AF.SetSize(cp, 14, 14)
     AF.ApplyDefaultBackdrop(cp)
@@ -123,38 +150,86 @@ function AF.CreateColorPicker(parent, label, alphaEnabled, onChange, onConfirm)
     cp.alphaEnabled = alphaEnabled
     cp.onChange = onChange
     cp.onConfirm = onConfirm
+    cp.onCancel = onCancel
+    cp.onDiscard = onDiscard
+    cp.onAccept = onAccept
 
     cp.color = {1, 1, 1, 1}
 
     cp:SetScript("OnClick", function()
-        -- reset temp
-        cp._r = cp.color[1]
-        cp._g = cp.color[2]
-        cp._b = cp.color[3]
-        cp._a = cp.color[4]
+        -- End the previous shared session before reading this widget's
+        -- current color. Its cancel callback may synchronously refresh this
+        -- widget or open a newer picker session.
+        AF.CancelColorPicker()
+        if AF.IsColorPickerOpen() then return end
 
-        AF.ShowColorPicker(cp, function(r, g, b, a)
-            cp:SetBackdropColor(r, g, b, a)
-            if cp._r ~= r or cp._g ~= g or cp._b ~= b or cp._a ~= a then
-                cp._r = r
-                cp._g = g
-                cp._b = b
-                cp._a = a
-                if cp.onChange then
-                    cp.onChange(r, g, b, a)
+        local sessionR = cp.color[1] or 1
+        local sessionG = cp.color[2] or 1
+        local sessionB = cp.color[3] or 1
+        local sessionA = cp.color[4] or 1
+        local acquired = AF.ShowColorPicker(
+            cp,
+            function(r, g, b, a)
+                cp:SetBackdropColor(r, g, b, a)
+                if cp._r ~= r or cp._g ~= g or cp._b ~= b or cp._a ~= a then
+                    cp._r = r
+                    cp._g = g
+                    cp._b = b
+                    cp._a = a
+                    if cp.onChange then
+                        cp.onChange(r, g, b, a)
+                    end
                 end
-            end
-        end, function(r, g, b, a)
-            if cp.color[1] ~= r or cp.color[2] ~= g or cp.color[3] ~= b or cp.color[4] ~= a then
-                cp.color[1] = r
-                cp.color[2] = g
-                cp.color[3] = b
-                cp.color[4] = a
-                if cp.onConfirm then
-                    cp.onConfirm(r, g, b, a)
+            end,
+            function(r, g, b, a)
+                if cp.color[1] ~= r
+                    or cp.color[2] ~= g
+                    or cp.color[3] ~= b
+                    or (cp.alphaEnabled and cp.color[4] ~= a)
+                then
+                    cp.color[1] = r
+                    cp.color[2] = g
+                    cp.color[3] = b
+                    if cp.alphaEnabled then
+                        cp.color[4] = a
+                    end
+                    if cp.onConfirm then
+                        cp.onConfirm(r, g, b, a)
+                    end
                 end
-            end
-        end, cp.alphaEnabled, unpack(cp.color))
+            end,
+            cp.alphaEnabled,
+            sessionR,
+            sessionG,
+            sessionB,
+            sessionA,
+            function(r, g, b, a)
+                if cp.onCancel then
+                    cp.onCancel(r, g, b, a)
+                end
+            end,
+            function(r, g, b, a)
+                cp:SetColor(cp.color)
+                if cp.onDiscard then
+                    cp.onDiscard(r, g, b, a)
+                end
+            end,
+            function(r, g, b, a)
+                if cp.onAccept then
+                    cp.onAccept(r, g, b, a)
+                end
+            end,
+            true
+        )
+
+        -- Initialization no longer emits a change callback. Pin comparisons
+        -- to the exact baseline captured after ownership transfer.
+        if acquired then
+            cp._r = sessionR
+            cp._g = sessionG
+            cp._b = sessionB
+            cp._a = sessionA
+        end
     end)
 
     cp.color = {1, 1, 1, 1}
@@ -185,7 +260,7 @@ local currentPane, originalPane, saturationBrightnessPane, hueSlider, alphaSlide
 local rEB, gEB, bEB, aEB, h_EB, s_EB, b_EB, hexEB
 local confirmBtn, cancelBtn
 
-local Callback
+local ActiveSession, ClosingSession, Callback
 
 local oR, oG, oB, oA
 local H, S, B, A
@@ -227,7 +302,23 @@ local function UpdateColor_HSBA(h, s, b, a, updateWidgetColor, updatePickerAndSl
     end
 end
 
-local function UpdateAll(use, v1, v2, v3, a, updateWidgetColor, updatePickerAndSlider)
+local function UpdateAll(
+    use,
+    v1,
+    v2,
+    v3,
+    a,
+    updateWidgetColor,
+    updatePickerAndSlider,
+    suppressCallback
+)
+    -- An RGB-only picker can edit color channels without changing a stored
+    -- alpha. Preset colors and other controls must retain that session alpha.
+    if ActiveSession and not ActiveSession.hasAlpha then
+        a = ActiveSession.original[4]
+        A = a
+    end
+
     if use == "rgb" then
         v1 = tonumber(format("%.3f", v1))
         v2 = tonumber(format("%.3f", v2))
@@ -235,12 +326,16 @@ local function UpdateAll(use, v1, v2, v3, a, updateWidgetColor, updatePickerAndS
         UpdateColor_RGBA(v1, v2, v3, a)
         local h, s, b = AF.ConvertRGBToHSB(v1, v2, v3)
         UpdateColor_HSBA(h, s, b, a, updateWidgetColor, updatePickerAndSlider)
-        Callback(v1, v2, v3, a)
+        if Callback and not suppressCallback then
+            Callback(v1, v2, v3, a)
+        end
     elseif use == "hsb" then
         UpdateColor_HSBA(v1, v2, v3, a, updateWidgetColor, updatePickerAndSlider)
         local r, g, b = AF.ConvertHSBToRGB(v1, v2, v3)
         UpdateColor_RGBA(r, g, b, a)
-        Callback(r, g, b, a)
+        if Callback and not suppressCallback then
+            Callback(r, g, b, a)
+        end
     end
 end
 
@@ -608,7 +703,7 @@ local function CreateColorPickerFrame()
         local scale = picker:GetEffectiveScale()
 
         local lastX, lastY
-        self:SetScript("OnUpdate", function(self)
+        self:SetScript("OnUpdate", function()
             local newMouseX, newMouseY = GetCursorPosition()
             if newMouseX == lastX and newMouseY == lastY then return end
             lastX, lastY = newMouseX, newMouseY
@@ -663,7 +758,6 @@ local function CreateColorPickerFrame()
         mouseX, mouseY = mouseX / scale, mouseY / scale
 
         -- start dragging
-        local x, y = select(4, picker:GetPoint(1))
         picker:StartMoving(mouseX / scale - sbX, mouseY / scale - sbY, mouseX, mouseY)
     end)
 
@@ -829,10 +923,71 @@ end
 ---------------------------------------------------------------------
 -- show
 ---------------------------------------------------------------------
-function AF.ShowColorPicker(owner, callback, onConfirm, hasAlpha, r, g, b, a)
+local function StopColorPickerInteraction()
+    if not colorPickerFrame then return end
+
+    colorPickerFrame:SetScript("OnUpdate", nil)
+    if picker then
+        picker:SetScript("OnUpdate", nil)
+    end
+end
+
+local function CloseColorPickerSession(
+    session,
+    firstCallback,
+    secondCallback,
+    ...
+)
+    ClosingSession = session or true
+    local hadError, firstError
+    local args = {...}
+    local numArgs = select("#", ...)
+
+    local function Run(callback)
+        if not callback then return end
+        local success, result = pcall(
+            callback,
+            unpack(args, 1, numArgs)
+        )
+        if not success and not hadError then
+            hadError = true
+            firstError = result
+        end
+    end
+
+    StopColorPickerInteraction()
+    ActiveSession = nil
+    Callback = nil
+    Run(function()
+        colorPickerFrame:Hide()
+    end)
+    Run(firstCallback)
+    Run(secondCallback)
+    ClosingSession = nil
+
+    if hadError then
+        error(firstError, 0)
+    end
+end
+
+function AF.ShowColorPicker(
+    owner,
+    callback,
+    onConfirm,
+    hasAlpha,
+    r,
+    g,
+    b,
+    a,
+    onCancel,
+    onDiscard,
+    onAccept,
+    suppressInitialCallback
+)
     if not colorPickerFrame then
         CreateColorPickerFrame()
     end
+    if ClosingSession then return false end
 
     -- colorPickerFrame:SetParent(owner)
     colorPickerFrame:SetFrameStrata("DIALOG")
@@ -846,10 +1001,17 @@ function AF.ShowColorPicker(owner, callback, onConfirm, hasAlpha, r, g, b, a)
     hueSlider.prev = nil
     alphaSlider.prev = nil
 
-    -- already shown, restore previous
-    if colorPickerFrame:IsShown() then
-        if Callback then
-            Callback(oR, oG, oB, oA)
+    -- Preserve direct ShowColorPicker's existing transfer behavior. Color
+    -- picker widgets cancel before reading their own baseline so a previous
+    -- callback can safely refresh the next widget first.
+    if ActiveSession then
+        local previousOwner = ActiveSession.owner
+        AF.CancelColorPicker(previousOwner)
+
+        -- A cancellation callback may synchronously open a newer session.
+        -- Preserve it instead of silently stealing ownership.
+        if ActiveSession then
+            return false
         end
     end
 
@@ -859,42 +1021,141 @@ function AF.ShowColorPicker(owner, callback, onConfirm, hasAlpha, r, g, b, a)
     -- data & callback
     H, S, B = AF.ConvertRGBToHSB(oR, oG, oB)
     A = oA
+    local session = {
+        owner = owner,
+        callback = callback,
+        onConfirm = onConfirm,
+        onCancel = onCancel,
+        onDiscard = onDiscard,
+        onAccept = onAccept,
+        hasAlpha = hasAlpha == true,
+        original = {oR, oG, oB, oA},
+    }
+    ActiveSession = session
     Callback = callback
 
     confirmBtn:SetScript("OnClick", function()
-        Callback = nil
-        colorPickerFrame:Hide()
-        local r, g, b = AF.ConvertHSBToRGB(H, S, B)
-        onConfirm(r, g, b, A)
+        if ActiveSession ~= session then return end
+
+        local confirmedR, confirmedG, confirmedB =
+            AF.ConvertHSBToRGB(H, S, B)
+        local confirmedA = A
+        local confirmCallback = session.onConfirm
+        local acceptCallback = session.onAccept
+
+        CloseColorPickerSession(
+            session,
+            confirmCallback,
+            acceptCallback,
+            confirmedR,
+            confirmedG,
+            confirmedB,
+            confirmedA
+        )
     end)
 
     cancelBtn:SetScript("OnClick", function()
-        colorPickerFrame:SetScript("OnUpdate", nil)
-        Callback = nil
-        colorPickerFrame:Hide()
-        callback(oR, oG, oB, oA)
+        AF.CancelColorPicker(owner)
     end)
 
     colorPickerFrame:SetScript("OnUpdate", function()
-        if owner:IsVisible() then return end
-        colorPickerFrame:SetScript("OnUpdate", nil)
-        Callback = nil
-        callback(oR, oG, oB, oA)
-        colorPickerFrame:Hide()
+        if ActiveSession ~= session
+            or owner:IsVisible()
+        then
+            return
+        end
+        AF.CancelColorPicker(owner)
     end)
 
     -- update originalPane
     originalPane:SetColor(oR, oG, oB, oA)
 
-    -- update all
-    UpdateAll("rgb", oR, oG, oB, oA, true, true)
+    -- Widget callers suppress initialization; direct callers retain the
+    -- existing initialization callback behavior.
+    UpdateAll(
+        "rgb",
+        oR,
+        oG,
+        oB,
+        oA,
+        true,
+        true,
+        suppressInitialCallback == true
+    )
+    if ActiveSession ~= session then
+        return false
+    end
     AF.SetEnabled(hasAlpha, alphaSlider, aEB, aEB.label2)
+    if ActiveSession ~= session then
+        return false
+    end
 
     colorPickerFrame:Show()
+    return ActiveSession == session
 end
 
-function AF.HideColorPicker()
-    if colorPickerFrame then
-        colorPickerFrame:Hide()
+---@param owner? Region only cancel if this region owns the picker
+---@return boolean canceled
+function AF.CancelColorPicker(owner)
+    local session = ActiveSession
+    if not session
+        or (owner and session.owner ~= owner)
+    then
+        return false
     end
+
+    local callback = session.callback
+    local cancelCallback = session.onCancel
+    local r, g, b, a = unpack(session.original)
+
+    CloseColorPickerSession(
+        session,
+        callback,
+        cancelCallback,
+        r,
+        g,
+        b,
+        a
+    )
+    return true
+end
+
+---@param owner? Region
+---@return boolean isOpen
+function AF.IsColorPickerOpen(owner)
+    return ActiveSession ~= nil
+        and colorPickerFrame ~= nil
+        and colorPickerFrame:IsShown()
+        and (not owner or ActiveSession.owner == owner)
+end
+
+---@param owner? Region only hide if this region owns the picker
+---@return boolean hidden
+function AF.HideColorPicker(owner)
+    if ClosingSession
+        or not colorPickerFrame
+        or (owner
+            and (not ActiveSession
+                or ActiveSession.owner ~= owner))
+    then
+        return false
+    end
+
+    local session = ActiveSession
+    local discardCallback = session and session.onDiscard
+    local r, g, b, a
+    if session then
+        r, g, b, a = unpack(session.original)
+    end
+
+    CloseColorPickerSession(
+        session,
+        discardCallback,
+        nil,
+        r,
+        g,
+        b,
+        a
+    )
+    return true
 end
