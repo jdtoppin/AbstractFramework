@@ -2,7 +2,10 @@
 local AF = select(2, ...)
 local F = AF.funcs
 
+-- Semantic classification uses Blizzard's base class, while class colors use
+-- AF's display-class resolver so follower units keep their presented class.
 local UnitClassBase = UnitClassBase
+local UnitDisplayClass = AF.UnitClassBase
 local UnitClassification = UnitClassification
 local UnitEffectiveLevel = UnitEffectiveLevel
 local UnitGetDetailedHealPrediction = UnitGetDetailedHealPrediction
@@ -151,7 +154,7 @@ local function SetConfiguredColor(bar, texture, config, skipTapDeniedCheck)
             if UnitHasVehicleUI(unit) then
                 r, g, b = AF.GetColorRGB("FRIENDLY", nil, factor)
             else
-                r, g, b = AF.GetClassColor(UnitClassBase(unit), nil, factor)
+                r, g, b = AF.GetClassColor(UnitDisplayClass(unit), nil, factor)
             end
         end
     elseif not skipTapDeniedCheck and not UnitPlayerControlled(unit) and UnitIsTapDenied(unit) then

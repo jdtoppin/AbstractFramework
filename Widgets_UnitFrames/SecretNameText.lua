@@ -1,7 +1,7 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
 
-local UnitClassBase = UnitClassBase
+local UnitClassBase = AF.UnitClassBase
 local UnitIsCharmed = UnitIsCharmed
 local UnitName = UnitName
 local UnitSelectionColor = UnitSelectionColor
