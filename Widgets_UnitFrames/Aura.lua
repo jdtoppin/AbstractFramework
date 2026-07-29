@@ -94,6 +94,26 @@ local function SetAuraShown(aura, shown)
     end
 end
 
+local function SetAuraTimer(aura, duration)
+    aura.cooldown:SetCooldownFromDurationObject(duration)
+    aura.durationBar:SetTimerDuration(
+        duration,
+        STATUS_BAR_IMMEDIATE,
+        STATUS_BAR_ELAPSED_TIME
+    )
+
+    -- Native timer setters can refresh child presentation. Keep a configured
+    -- cooldown style authoritative across live aura updates and previews.
+    if aura.cooldownStyle then
+        SetupAuraCooldownStyle(
+            aura.icon,
+            aura.cooldown,
+            aura.durationBar,
+            aura.cooldownStyle
+        )
+    end
+end
+
 function AF_SecretAuraMixin:SetAura(unit, auraInstanceID)
     self.unit = unit
     self.auraInstanceID = auraInstanceID
@@ -120,8 +140,7 @@ function AF_SecretAuraMixin:SetAura(unit, auraInstanceID)
     end
 
     self.stackText:SetText(GetAuraApplicationDisplayCount(unit, auraInstanceID))
-    self.cooldown:SetCooldownFromDurationObject(duration)
-    self.durationBar:SetTimerDuration(duration, STATUS_BAR_IMMEDIATE, STATUS_BAR_ELAPSED_TIME)
+    SetAuraTimer(self, duration)
     self.durationTextBinding:SetDuration(duration)
     self.durationTextBinding:Enable()
     SetAuraShown(self, true)
@@ -142,7 +161,7 @@ function AF_SecretAuraMixin:SetTemporaryEnchant(unit, inventorySlot, remainingTi
     self.icon:SetTexture(GetInventoryItemTexture(unit, inventorySlot))
     self.dispelOverlay:Hide()
     self.stackText:SetText(applications > 1 and applications or "")
-    self.cooldown:SetCooldownFromDurationObject(duration)
+    SetAuraTimer(self, duration)
     self.durationTextBinding:SetDuration(duration)
     self.durationTextBinding:Enable()
     SetAuraShown(self, true)
@@ -185,8 +204,7 @@ function AF_SecretAuraMixin:SetCooldown(startTime, duration, applications, icon)
     self.icon:SetTexture(icon)
     self.dispelOverlay:Hide()
     self.stackText:SetText(applications)
-    self.cooldown:SetCooldownFromDurationObject(previewDuration)
-    self.durationBar:SetTimerDuration(previewDuration, STATUS_BAR_IMMEDIATE, STATUS_BAR_ELAPSED_TIME)
+    SetAuraTimer(self, previewDuration)
     self.durationTextBinding:SetDuration(previewDuration)
     self.durationTextBinding:Enable()
     SetAuraShown(self, true)
