@@ -1223,12 +1223,12 @@ assertEqual(enchantmentDurationBar.shown, true,
 assertCall({
     name = "SetStatusBarColor",
     args = enchantmentDurationBar.statusBarColor,
-}, "SetStatusBarColor", 0.5, 0.5, 0.5, 1)
+}, "SetStatusBarColor", 0, 0, 0, 0.75)
 assertCall({
     name = "SetColorTexture",
     args = enchantmentBlockBackground.colorTexture,
 }, "SetColorTexture", 0.5, 0.5, 0.5, 1)
-assertEqual(enchantmentBlockBackground.shown, false,
+assertEqual(enchantmentBlockBackground.shown, true,
     "native block vertical background visibility")
 assertEqual(enchantmentIcon.shown, false,
     "native block vertical icon visibility")
@@ -1358,22 +1358,30 @@ assertEqual(legacyCooldown.shown, false,
     "legacy block vertical cooldown visibility")
 assertEqual(legacyDurationBar.shown, true,
     "legacy block vertical duration bar visibility")
-assertEqual(legacyBlockBackground.shown, false,
+assertEqual(legacyBlockBackground.shown, true,
     "legacy block vertical background visibility")
 assertEqual(legacyIcon.shown, false,
     "legacy block vertical icon visibility")
 assertCall({
     name = "SetStatusBarColor",
     args = legacyDurationBar.statusBarColor,
-}, "SetStatusBarColor", 0.15, 0.25, 0.35, 0.45)
+}, "SetStatusBarColor", 0, 0, 0, 0.75)
+assertCall({
+    name = "SetColorTexture",
+    args = legacyBlockBackground.colorTexture,
+}, "SetColorTexture", 0.15, 0.25, 0.35, 0.45)
 
 legacyBlockColor[1] = 0.95
 legacyAura:SetCooldown(200, 30, 3, previewIcon)
 assertCall({
     name = "SetStatusBarColor",
     args = legacyDurationBar.statusBarColor,
-}, "SetStatusBarColor", 0.15, 0.25, 0.35, 0.45)
-assertEqual(legacyBlockBackground.shown, false,
+}, "SetStatusBarColor", 0, 0, 0, 0.75)
+assertCall({
+    name = "SetColorTexture",
+    args = legacyBlockBackground.colorTexture,
+}, "SetColorTexture", 0.15, 0.25, 0.35, 0.45)
+assertEqual(legacyBlockBackground.shown, true,
     "legacy timer refresh block vertical background visibility")
 
 legacyAura:SetCooldownStyle("clock_with_leading_edge")

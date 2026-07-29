@@ -101,17 +101,13 @@ local function SetupAuraCooldownStyle(
     local isVertical = style == "vertical" or style == "block_vertical"
     local isBlockVertical = style == "block_vertical"
     local isBlockClock = style:find("^block_clock") ~= nil
+    local isBlock = isBlockVertical or isBlockClock
     cooldown:SetShown(style ~= "none" and not isVertical)
     cooldown:SetDrawEdge(style:find("edge$") ~= nil)
     durationBar:SetShown(isVertical)
-    durationBar:SetStatusBarColor(
-        isBlockVertical and blockColor[1] or 0,
-        isBlockVertical and blockColor[2] or 0,
-        isBlockVertical and blockColor[3] or 0,
-        isBlockVertical and blockColor[4] or 0.75
-    )
+    durationBar:SetStatusBarColor(0, 0, 0, 0.75)
     blockBackground:SetColorTexture(unpack(blockColor))
-    blockBackground:SetShown(isBlockClock)
+    blockBackground:SetShown(isBlock)
     icon:SetShown(style:find("^block") == nil)
 end
 
