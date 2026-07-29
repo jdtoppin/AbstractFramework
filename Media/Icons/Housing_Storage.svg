@@ -1,0 +1,17 @@
+<!-- Housing_Storage: Tabler Icons v3.46.0 treasure-chest; MIT -->
+<svg xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="-2 -2 28 28"
+  fill="none"
+  stroke="#ffffff"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M4 19h16a1 1 0 0 0 1 -1v-9a4 4 0 0 0 -4 -4h-10a4 4 0 0 0 -4 4v9a1 1 0 0 0 1 1" />
+  <path d="M3 11h18" />
+  <path d="M16 5v14" />
+  <path d="M8 5v14" />
+  <path d="M12 11v2" />
+</svg>
