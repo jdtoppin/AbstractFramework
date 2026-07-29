@@ -112,6 +112,7 @@ local function makeRegion(button)
     end
 
     function region:SetColorTexture(...)
+        self.colorTexture = pack(...)
         style("SetColorTexture", ...)
     end
 
@@ -928,12 +929,14 @@ local groupOptions = {
         forceNewLine = false,
     },
 }
+local configuredBlockColor = {0.2, 0.3, 0.4, 0.6}
 local buttonStyle = {
     width = 20,
     height = 18,
     iconInset = 1,
     desaturated = false,
-    cooldownStyle = "vertical",
+    cooldownStyle = "block_clock_with_leading_edge",
+    blockColor = configuredBlockColor,
     durationText = {
         enabled = true,
         font = {"font", 10, ""},
@@ -964,6 +967,12 @@ assert(copiedGroupOptions ~= groupOptions, "group options were not copied")
 assert(copiedGroupOptions.candidateFilters ~= groupOptions.candidateFilters, "nested group options were not copied")
 assertEqual(groupOptions.initializeFrame, nil, "caller group options mutated")
 assertEqual(buttonStyle.dispelColorCurve, nil, "caller button style mutated")
+assertEqual(buttonStyle.blockColor, configuredBlockColor,
+    "caller block color table replaced")
+assertCall({
+    name = "SetColorTexture",
+    args = pack(unpack(buttonStyle.blockColor)),
+}, "SetColorTexture", 0.2, 0.3, 0.4, 0.6)
 assertSnapshotEqual(
     AF.GetCustomAuraContainerConstructionTotals(),
     expectedConstructionTotals({
@@ -998,6 +1007,7 @@ assert(firstButton.firstBindingSequence > firstButton.lastRegionStyleSequence,
     "custom aura regions were not fully styled before native registration")
 local icon = firstButton.bindings.SetIcon[1]
 local cooldown = firstButton.bindings.SetDurationCooldown[1]
+local blockBackground = firstButton.regions[4]
 local durationBarArguments = firstButton.bindings.SetDurationBar
 assertEqual(durationBarArguments.n, 2, "duration bar binding argument count")
 local durationBar = durationBarArguments[1]
@@ -1015,9 +1025,12 @@ assertEqual(
 )
 assertEqual(cooldown.hideCountdownNumbers, true, "cooldown countdown suppression")
 assertEqual(cooldown.noCooldownCount, true, "third-party countdown suppression")
-assertEqual(cooldown.shown, false, "vertical cooldown sweep visibility")
-assertEqual(cooldown.drawEdge, false, "vertical cooldown edge visibility")
-assertEqual(durationBar.shown, true, "vertical duration bar visibility")
+assertEqual(cooldown.shown, true, "block clock cooldown sweep visibility")
+assertEqual(cooldown.drawEdge, true,
+    "block clock leading-edge visibility")
+assertEqual(findCall(cooldown.calls, "SetSwipeColor"), nil,
+    "block clock native swipe color ownership")
+assertEqual(durationBar.shown, false, "block clock duration bar visibility")
 assertEqual(durationBar.orientation, "VERTICAL", "duration bar orientation")
 assertEqual(durationBar.reverseFill, true, "duration bar reverse fill")
 assertEqual(durationBar.statusBarTexture, state.plainTexture, "duration bar texture")
@@ -1025,7 +1038,12 @@ assertCall({
     name = "SetStatusBarColor",
     args = durationBar.statusBarColor,
 }, "SetStatusBarColor", 0, 0, 0, 0.75)
-assertEqual(icon.shown, true, "vertical icon visibility")
+assertCall({
+    name = "SetColorTexture",
+    args = blockBackground.colorTexture,
+}, "SetColorTexture", 0.2, 0.3, 0.4, 0.6)
+assertEqual(blockBackground.shown, true, "block clock background visibility")
+assertEqual(icon.shown, false, "block clock icon visibility")
 assertCall({
     name = "SetFrameLevel",
     args = cooldown.frameLevel,
@@ -1134,6 +1152,7 @@ assertEqual(slotOptions.anchor.relativeTo, slotAnchorTarget, "caller slot anchor
 local slotIcon = slotButton.bindings.SetIcon[1]
 local slotCooldown = slotButton.bindings.SetDurationCooldown[1]
 local slotDurationBar = slotButton.bindings.SetDurationBar[1]
+local slotBlockBackground = slotButton.regions[4]
 assertEqual(slotCooldown.hideCountdownNumbers, true,
     "clock cooldown countdown suppression")
 assertEqual(slotCooldown.noCooldownCount, true,
@@ -1141,6 +1160,8 @@ assertEqual(slotCooldown.noCooldownCount, true,
 assertEqual(slotCooldown.shown, true, "clock cooldown sweep visibility")
 assertEqual(slotCooldown.drawEdge, true, "clock cooldown edge visibility")
 assertEqual(slotDurationBar.shown, false, "clock duration bar visibility")
+assertEqual(slotBlockBackground.shown, false,
+    "ordinary clock block background visibility")
 assertEqual(slotIcon.shown, true, "clock icon visibility")
 assertSnapshotEqual(
     AF.GetCustomAuraContainerConstructionTotals(),
@@ -1179,13 +1200,38 @@ assertSnapshotEqual(
     "slot tuning must not grow construction"
 )
 
+local defaultBlockButtonStyle = copy(buttonStyle)
+defaultBlockButtonStyle.cooldownStyle = "block_vertical"
+defaultBlockButtonStyle.blockColor = nil
 local enchantmentButton = AF.AddCustomItemEnchantment(
     container,
     api.AuraContainerItemEnchantmentSlot.MainHand,
     {hidePermanent = true},
-    buttonStyle
+    defaultBlockButtonStyle
 )
 assertEqual(enchantmentButton, container.buttons[3], "enchantment return value")
+assertEqual(defaultBlockButtonStyle.blockColor, nil,
+    "caller default block color mutated")
+local enchantmentIcon = enchantmentButton.bindings.SetIcon[1]
+local enchantmentCooldown = enchantmentButton.bindings.SetDurationCooldown[1]
+local enchantmentDurationBar = enchantmentButton.bindings.SetDurationBar[1]
+local enchantmentBlockBackground = enchantmentButton.regions[4]
+assertEqual(enchantmentCooldown.shown, false,
+    "native block vertical cooldown visibility")
+assertEqual(enchantmentDurationBar.shown, true,
+    "native block vertical duration bar visibility")
+assertCall({
+    name = "SetStatusBarColor",
+    args = enchantmentDurationBar.statusBarColor,
+}, "SetStatusBarColor", 0.5, 0.5, 0.5, 1)
+assertCall({
+    name = "SetColorTexture",
+    args = enchantmentBlockBackground.colorTexture,
+}, "SetColorTexture", 0.5, 0.5, 0.5, 1)
+assertEqual(enchantmentBlockBackground.shown, false,
+    "native block vertical background visibility")
+assertEqual(enchantmentIcon.shown, false,
+    "native block vertical icon visibility")
 assert(state.bindings[1] ~= state.bindings[2], "duration bindings must be button-local")
 assertSnapshotEqual(
     AF.GetCustomAuraContainerConstructionTotals(),
@@ -1247,6 +1293,7 @@ local legacyAura = AF.InitAura(makeButton(), true)
 local legacyIcon = legacyAura.icon
 local legacyCooldown = legacyAura.cooldown
 local legacyDurationBar = legacyAura.durationBar
+local legacyBlockBackground = legacyAura.blockBackground
 local legacyDurationTextBinding = legacyAura.durationTextBinding
 assertEqual(legacyCooldown.hideCountdownNumbers, true,
     "legacy cooldown countdown suppression")
@@ -1256,6 +1303,12 @@ assertEqual(legacyDurationBar.orientation, "VERTICAL",
     "legacy duration bar orientation")
 assertEqual(legacyDurationBar.reverseFill, true,
     "legacy duration bar reverse fill")
+assertCall({
+    name = "SetColorTexture",
+    args = legacyBlockBackground.colorTexture,
+}, "SetColorTexture", 0.5, 0.5, 0.5, 1)
+assertEqual(legacyBlockBackground.shown, false,
+    "legacy initial block background visibility")
 assertCall(
     findCall(legacyDurationTextBinding.calls, "SetFormatter"),
     "SetFormatter",
@@ -1271,6 +1324,8 @@ legacyAura:SetCooldownStyle("vertical")
 assertEqual(legacyCooldown.shown, false, "legacy vertical cooldown visibility")
 assertEqual(legacyDurationBar.shown, true,
     "legacy vertical duration bar visibility")
+assertEqual(legacyBlockBackground.shown, false,
+    "legacy vertical block background visibility")
 assertEqual(legacyIcon.shown, true, "legacy vertical icon visibility")
 assertCall({
     name = "SetStatusBarColor",
@@ -1293,32 +1348,56 @@ assertCall({
     api.Enum.StatusBarInterpolation.Immediate,
     api.Enum.StatusBarTimerDirection.ElapsedTime)
 
-legacyAura:SetCooldownStyle("block_vertical")
+local legacyBlockColor = {0.15, 0.25, 0.35, 0.45}
+legacyAura:SetCooldownStyle("block_vertical", legacyBlockColor)
+assertCall({
+    name = "caller block color",
+    args = pack(unpack(legacyBlockColor)),
+}, "caller block color", 0.15, 0.25, 0.35, 0.45)
 assertEqual(legacyCooldown.shown, false,
     "legacy block vertical cooldown visibility")
 assertEqual(legacyDurationBar.shown, true,
     "legacy block vertical duration bar visibility")
+assertEqual(legacyBlockBackground.shown, false,
+    "legacy block vertical background visibility")
 assertEqual(legacyIcon.shown, false,
     "legacy block vertical icon visibility")
 assertCall({
     name = "SetStatusBarColor",
     args = legacyDurationBar.statusBarColor,
-}, "SetStatusBarColor", 0.5, 0.5, 0.5, 1)
+}, "SetStatusBarColor", 0.15, 0.25, 0.35, 0.45)
+
+legacyBlockColor[1] = 0.95
+legacyAura:SetCooldown(200, 30, 3, previewIcon)
+assertCall({
+    name = "SetStatusBarColor",
+    args = legacyDurationBar.statusBarColor,
+}, "SetStatusBarColor", 0.15, 0.25, 0.35, 0.45)
+assertEqual(legacyBlockBackground.shown, false,
+    "legacy timer refresh block vertical background visibility")
 
 legacyAura:SetCooldownStyle("clock_with_leading_edge")
 assertEqual(legacyCooldown.shown, true, "legacy clock cooldown visibility")
 assertEqual(legacyCooldown.drawEdge, true, "legacy clock leading edge")
 assertEqual(legacyDurationBar.shown, false,
     "legacy clock duration bar visibility")
+assertEqual(legacyBlockBackground.shown, false,
+    "legacy clock block background visibility")
 assertEqual(legacyIcon.shown, true, "legacy clock icon visibility")
 
-legacyAura:SetCooldownStyle("block_clock")
+legacyAura:SetCooldownStyle("block_clock", {0.6, 0.4, 0.2, 0.8})
 assertEqual(legacyCooldown.shown, true,
     "legacy block clock cooldown visibility")
 assertEqual(legacyCooldown.drawEdge, false,
     "legacy block clock leading edge")
 assertEqual(legacyDurationBar.shown, false,
     "legacy block clock duration bar visibility")
+assertCall({
+    name = "SetColorTexture",
+    args = legacyBlockBackground.colorTexture,
+}, "SetColorTexture", 0.6, 0.4, 0.2, 0.8)
+assertEqual(legacyBlockBackground.shown, true,
+    "legacy block clock background visibility")
 assertEqual(legacyIcon.shown, false,
     "legacy block clock icon visibility")
 
@@ -1326,6 +1405,8 @@ legacyAura:SetCooldownStyle("none")
 assertEqual(legacyCooldown.shown, false, "legacy no-cooldown visibility")
 assertEqual(legacyDurationBar.shown, false,
     "legacy no-duration-bar visibility")
+assertEqual(legacyBlockBackground.shown, false,
+    "legacy no-cooldown block background visibility")
 assertEqual(legacyIcon.shown, true, "legacy no-cooldown icon visibility")
 
 local function makeAuraListSlot()
