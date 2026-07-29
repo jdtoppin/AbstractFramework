@@ -10,13 +10,18 @@ local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
 local STATUS_BAR_IMMEDIATE = Enum.StatusBarInterpolation.Immediate
 local STATUS_BAR_ELAPSED_TIME = Enum.StatusBarTimerDirection.ElapsedTime
 
-local durationFormatter = C_StringUtil.CreateNumericRuleFormatter()
-durationFormatter:SetBreakpoints({
-    {
-        threshold = 0,
-        format = "%.1f",
-    },
-})
+-- Retail 12.0.7.68887 and 12.1.0.68914 expose this formatter to
+-- DurationTextBinding, so secret remaining-time values stay entirely native
+-- while changing units at the ordinary minute/hour/day boundaries.
+local durationFormatter = C_StringUtil.CreateSecondsFormatter()
+durationFormatter:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
+durationFormatter:SetMinInterval(Enum.SecondsFormatterInterval.Seconds)
+durationFormatter:SetMaxInterval(Enum.SecondsFormatterInterval.Days)
+durationFormatter:SetDesiredUnitCount(1)
+durationFormatter:SetCanRoundUpLastUnit(false)
+durationFormatter:SetCanRoundUpIntervals(false)
+durationFormatter:SetMillisecondsThreshold(60)
+durationFormatter:SetStripIntervalWhitespace(Enum.SecondsFormatterIntervalWhitespace.Strip)
 
 local dispelTypes = {
     {0, "None"},
@@ -327,7 +332,7 @@ function AF.InitAura(button, noBorder, visibilityManagedExternally)
     button.durationTextBinding:SetFormatter(durationFormatter)
     button.durationTextBinding:SetExpiredText("0.0")
     button.durationTextBinding:SetZeroDurationText("")
-    button.durationTextBinding:SetUpdateInterval(0)
+    button.durationTextBinding:SetUpdateInterval(0.1)
 
     button:SetFallbackIcon(134400)
     button:SetScript("OnEnter", Aura_OnEnter)
@@ -477,7 +482,7 @@ local function CreateCustomAuraDurationTextBinding()
     binding:SetFormatter(durationFormatter)
     binding:SetExpiredText("0.0")
     binding:SetZeroDurationText("")
-    binding:SetUpdateInterval(0)
+    binding:SetUpdateInterval(0.1)
     return binding
 end
 
