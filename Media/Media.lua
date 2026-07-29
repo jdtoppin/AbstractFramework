@@ -18,6 +18,10 @@ end
 ---------------------------------------------------------------------
 -- get icon
 ---------------------------------------------------------------------
+-- Static capability marker for consumers that can fall back when the shared
+-- Housing icon family is unavailable in an older framework build.
+AF.hasHousingIcons = true
+
 ---@param icon string fileName
 ---@param addon? string addonFolderName
 ---@return string iconPath
