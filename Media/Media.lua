@@ -29,6 +29,12 @@ AF.hasViewIcons = true
 AF.hasVectorGraphics = UIParent and type(UIParent.CreateVectorGraphics) == "function" or false
 AF.hasSVGIcons = AF.hasVectorGraphics
 AF.hasHousingSVGIcons = AF.hasSVGIcons
+-- Texture:SetTexture() reports success before SVG decoding finishes. On PTR
+-- 12.1.0.68745, addon SVGs can therefore become the green diagnostic texture
+-- without giving this helper a usable failure signal. Keep existing Texture
+-- consumers on their matching raster assets until that path is proven on the
+-- final client; native VectorGraphics support needs a distinct region helper.
+AF.hasTextureSVGIcons = false
 
 ---@param icon string fileName
 ---@param addon? string addonFolderName
@@ -49,7 +55,7 @@ end
 function AF.GetAdaptiveIcon(icon, forceRaster)
     if AF.IsBlank(icon) then return "" end
 
-    local extension = not forceRaster and AF.hasSVGIcons and ".svg" or ".tga"
+    local extension = not forceRaster and AF.hasTextureSVGIcons and ".svg" or ".tga"
     return AF.GetIcon(icon .. extension)
 end
 
@@ -59,10 +65,7 @@ end
 function AF.SetAdaptiveIcon(texture, icon)
     if not texture or AF.IsBlank(icon) then return false end
 
-    if AF.hasSVGIcons and texture:SetTexture(AF.GetAdaptiveIcon(icon)) then
-        return true
-    end
-    return texture:SetTexture(AF.GetAdaptiveIcon(icon, true))
+    return texture:SetTexture(AF.GetAdaptiveIcon(icon))
 end
 
 ---@param icon string Housing icon fileName without extension
