@@ -35,3 +35,9 @@ jobs:
 
       - name: Test unit class resolution
         run: luajit tests/unit_class_base_test.lua
+
+      - name: Test adaptive icon selection
+        run: luajit tests/adaptive_icon_test.lua
+
+      - name: Validate generated icon assets
+        run: node .utils/generate_tabler_icons.cjs --check

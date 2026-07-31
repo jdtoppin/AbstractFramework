@@ -23,9 +23,11 @@ end
 AF.hasHousingIcons = true
 AF.hasViewIcons = true
 -- Frame:CreateVectorGraphics is absent in Retail 12.0.7.68887 and present in
--- PTR 12.1.0.68914. The same 12.1 client accepts explicit SVG paths on regular
--- Texture regions, which preserves texture tinting and the raster fallback.
-AF.hasSVGIcons = UIParent and type(UIParent.CreateVectorGraphics) == "function" or false
+-- PTR 12.1.0.68914, where both Texture and VectorGraphics regions support SVG
+-- files. Use the co-shipped method as a client-version proxy while keeping
+-- ordinary Texture regions for tint and texture-coordinate support.
+AF.hasVectorGraphics = UIParent and type(UIParent.CreateVectorGraphics) == "function" or false
+AF.hasSVGIcons = AF.hasVectorGraphics
 AF.hasHousingSVGIcons = AF.hasSVGIcons
 
 ---@param icon string fileName
