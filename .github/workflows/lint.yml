@@ -38,3 +38,9 @@ jobs:
 
       - name: Test effective max-level compatibility
         run: luajit tests/is_max_level_compat_test.lua
+
+      - name: Test adaptive icon selection
+        run: luajit tests/adaptive_icon_test.lua
+
+      - name: Validate generated icon assets
+        run: node .utils/generate_tabler_icons.cjs --check

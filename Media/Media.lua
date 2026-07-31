@@ -18,6 +18,25 @@ end
 ---------------------------------------------------------------------
 -- get icon
 ---------------------------------------------------------------------
+-- Static capability markers for consumers that can fall back when a shared
+-- icon family is unavailable in an older framework build.
+AF.hasHousingIcons = true
+AF.hasViewIcons = true
+AF.hasLockIcons = true
+-- Frame:CreateVectorGraphics is absent in Retail 12.0.7.68887 and present in
+-- PTR 12.1.0.68914, where both Texture and VectorGraphics regions support SVG
+-- files. Use the co-shipped method as a client-version proxy while keeping
+-- ordinary Texture regions for tint and texture-coordinate support.
+AF.hasVectorGraphics = UIParent and type(UIParent.CreateVectorGraphics) == "function" or false
+AF.hasSVGIcons = AF.hasVectorGraphics
+AF.hasHousingSVGIcons = AF.hasSVGIcons
+-- Texture:SetTexture() reports success before SVG decoding finishes. On PTR
+-- 12.1.0.68745, addon SVGs can therefore become the green diagnostic texture
+-- without giving this helper a usable failure signal. Keep existing Texture
+-- consumers on their matching raster assets until that path is proven on the
+-- final client; native VectorGraphics support needs a distinct region helper.
+AF.hasTextureSVGIcons = false
+
 ---@param icon string fileName
 ---@param addon? string addonFolderName
 ---@return string iconPath
@@ -29,6 +48,39 @@ function AF.GetIcon(icon, addon)
     else
         return "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\" .. icon
     end
+end
+
+---@param icon string icon fileName without extension
+---@param forceRaster? boolean
+---@return string iconPath
+function AF.GetAdaptiveIcon(icon, forceRaster)
+    if AF.IsBlank(icon) then return "" end
+
+    local extension = not forceRaster and AF.hasTextureSVGIcons and ".svg" or ".tga"
+    return AF.GetIcon(icon .. extension)
+end
+
+---@param texture Texture
+---@param icon string icon fileName without extension
+---@return boolean success
+function AF.SetAdaptiveIcon(texture, icon)
+    if not texture or AF.IsBlank(icon) then return false end
+
+    return texture:SetTexture(AF.GetAdaptiveIcon(icon))
+end
+
+---@param icon string Housing icon fileName without extension
+---@param forceRaster? boolean
+---@return string iconPath
+function AF.GetHousingIcon(icon, forceRaster)
+    return AF.GetAdaptiveIcon(icon, forceRaster)
+end
+
+---@param texture Texture
+---@param icon string Housing icon fileName without extension
+---@return boolean success
+function AF.SetHousingIcon(texture, icon)
+    return AF.SetAdaptiveIcon(texture, icon)
 end
 
 ---@param icon string fileName
