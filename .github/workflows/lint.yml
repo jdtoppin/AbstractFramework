@@ -36,6 +36,9 @@ jobs:
       - name: Test unit class resolution
         run: luajit tests/unit_class_base_test.lua
 
+      - name: Test effective max-level compatibility
+        run: luajit tests/is_max_level_compat_test.lua
+
       - name: Test adaptive icon selection
         run: luajit tests/adaptive_icon_test.lua
 

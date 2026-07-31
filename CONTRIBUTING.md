@@ -7,6 +7,12 @@ not be edited merely to make it conform.
 
 - The combat-capable secret-safe path is the only implementation path. Do not
   divide behavior into secret and non-secret branches.
+- The one approved exception is the shared nameplate threat indicator. It may
+  use `C_Secrets.ShouldUnitThreatStateBeSecret` to select between qualitative
+  state colors and Blizzard's native threat carrier, provided every returned
+  threat value is also checked by `F.isValueNonSecret` before any Lua
+  operation. This exception stays centralized in AbstractFramework; consumers
+  must not reproduce the branch.
 - Never use `pcall` or `xpcall` to probe secret values, bypass an API contract,
   or create a separate combat path. They may remain for necessary non-secret
   error isolation when removing them would change established behavior; new
