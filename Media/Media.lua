@@ -18,10 +18,11 @@ end
 ---------------------------------------------------------------------
 -- get icon
 ---------------------------------------------------------------------
--- Static capability marker for consumers that can fall back when the shared
--- Housing icon family is unavailable in an older framework build.
+-- Static capability markers for consumers that can fall back when a shared
+-- icon family is unavailable in an older framework build.
 AF.hasHousingIcons = true
 AF.hasViewIcons = true
+AF.hasLockIcons = true
 -- Frame:CreateVectorGraphics is absent in Retail 12.0.7.68887 and present in
 -- PTR 12.1.0.68914, where both Texture and VectorGraphics regions support SVG
 -- files. Use the co-shipped method as a client-version proxy while keeping

@@ -83,6 +83,8 @@ const ICONS = {
     Housing_WallHangings: "photo",
     Housing_WallLights: "lamp-2",
     Housing_Windows: "window",
+    Lock: "lock",
+    Unlock: "lock-open",
     View_Reset: "restore",
     View_RotateLeft: "rotate",
     View_RotateRight: "rotate-clockwise",

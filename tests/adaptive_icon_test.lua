@@ -22,10 +22,21 @@ mediaChunk("AbstractFramework", AF)
 assertEqual(AF.hasVectorGraphics, true, "12.1 VectorGraphics capability")
 assertEqual(AF.hasSVGIcons, true, "12.1 SVG asset capability")
 assertEqual(AF.hasTextureSVGIcons, false, "12.1 Texture SVG safety gate")
+assertEqual(AF.hasLockIcons, true, "shared lock icon capability")
 assertEqual(
     AF.GetAdaptiveIcon("Housing_All"),
     "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Housing_All.tga",
     "12.1 adaptive Texture path"
+)
+assertEqual(
+    AF.GetAdaptiveIcon("Lock"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Lock.tga",
+    "12.1 lock Texture raster path"
+)
+assertEqual(
+    AF.GetAdaptiveIcon("Unlock"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Unlock.tga",
+    "12.1 unlock Texture raster path"
 )
 
 local loadedPath
@@ -70,10 +81,21 @@ mediaChunk("AbstractFramework", rasterAF)
 assertEqual(rasterAF.hasVectorGraphics, false, "12.0 VectorGraphics capability")
 assertEqual(rasterAF.hasSVGIcons, false, "12.0 SVG asset capability")
 assertEqual(rasterAF.hasTextureSVGIcons, false, "12.0 Texture SVG safety gate")
+assertEqual(rasterAF.hasLockIcons, true, "12.0 shared lock icon capability")
 assertEqual(
     rasterAF.GetAdaptiveIcon("Housing_All"),
     "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Housing_All.tga",
     "12.0 adaptive Texture path"
+)
+assertEqual(
+    rasterAF.GetAdaptiveIcon("Lock"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Lock.tga",
+    "12.0 lock Texture raster path"
+)
+assertEqual(
+    rasterAF.GetAdaptiveIcon("Unlock"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Unlock.tga",
+    "12.0 unlock Texture raster path"
 )
 
 print("adaptive icon tests passed")
