@@ -90,6 +90,14 @@ local function CreateAuraBlockBackground(parent, anchor, blockColor)
     return background
 end
 
+local function UsesAuraDurationBar(style)
+    return style == "vertical" or style == "block_vertical"
+end
+
+local function UsesAuraDurationCooldown(style)
+    return style ~= "none" and not UsesAuraDurationBar(style)
+end
+
 local function SetupAuraCooldownStyle(
     icon,
     cooldown,
@@ -98,14 +106,18 @@ local function SetupAuraCooldownStyle(
     style,
     blockColor
 )
-    local isVertical = style == "vertical" or style == "block_vertical"
+    local isVertical = UsesAuraDurationBar(style)
     local isBlockVertical = style == "block_vertical"
     local isBlockClock = style:find("^block_clock") ~= nil
     local isBlock = isBlockVertical or isBlockClock
-    cooldown:SetShown(style ~= "none" and not isVertical)
-    cooldown:SetDrawEdge(style:find("edge$") ~= nil)
-    durationBar:SetShown(isVertical)
-    durationBar:SetStatusBarColor(0, 0, 0, 0.75)
+    if cooldown then
+        cooldown:SetShown(UsesAuraDurationCooldown(style))
+        cooldown:SetDrawEdge(style:find("edge$") ~= nil)
+    end
+    if durationBar then
+        durationBar:SetShown(isVertical)
+        durationBar:SetStatusBarColor(0, 0, 0, 0.75)
+    end
     blockBackground:SetColorTexture(unpack(blockColor))
     blockBackground:SetShown(isBlock)
     icon:SetShown(style:find("^block") == nil)
@@ -584,24 +596,36 @@ local function InitializeCustomAuraButton(button, style, anchor)
     local blockColor = CopyAuraBlockColor(style.blockColor)
     local blockBackground = CreateAuraBlockBackground(button, icon, blockColor)
 
-    local cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
-    AF.SetFrameLevel(cooldown, 1, button)
-    cooldown:SetAllPoints(icon)
-    cooldown:SetDrawBling(false)
-    cooldown:SetDrawEdge(false)
-    -- AF's duration binding owns the numeric label. Keep the cooldown frame
-    -- for its sweep and edge without native or third-party countdown text.
-    cooldown:SetHideCountdownNumbers(true)
-    cooldown.noCooldownCount = true
-    cooldown:SetUseAuraDisplayTime(true)
+    local cooldownStyle = style.cooldownStyle or "none"
+    local cooldown
+    if UsesAuraDurationCooldown(cooldownStyle) then
+        cooldown = CreateFrame(
+            "Cooldown",
+            nil,
+            button,
+            "CooldownFrameTemplate"
+        )
+        AF.SetFrameLevel(cooldown, 1, button)
+        cooldown:SetAllPoints(icon)
+        cooldown:SetDrawBling(false)
+        cooldown:SetDrawEdge(false)
+        -- AF's duration binding owns the numeric label. Keep the cooldown
+        -- frame for its sweep and edge without native or third-party text.
+        cooldown:SetHideCountdownNumbers(true)
+        cooldown.noCooldownCount = true
+        cooldown:SetUseAuraDisplayTime(true)
+    end
 
-    local durationBar = CreateAuraDurationBar(button, icon)
+    local durationBar
+    if UsesAuraDurationBar(cooldownStyle) then
+        durationBar = CreateAuraDurationBar(button, icon)
+    end
     SetupAuraCooldownStyle(
         icon,
         cooldown,
         durationBar,
         blockBackground,
-        style.cooldownStyle or "none",
+        cooldownStyle,
         blockColor
     )
 
@@ -635,11 +659,18 @@ local function InitializeCustomAuraButton(button, style, anchor)
     -- Fully configure regions before attaching them, then avoid relying on
     -- access to a live button while aura data is secret.
     button:SetIcon(icon)
-    button:SetDurationCooldown(cooldown)
-    button:SetDurationBar(durationBar, {
-        interpolation = STATUS_BAR_IMMEDIATE,
-        direction = STATUS_BAR_ELAPSED_TIME,
-    })
+    -- Retail 12.1 updates every registered duration display. Registering both
+    -- carriers lets the native timer setter reactivate the nominally hidden
+    -- one, drawing Blizzard's clock and AF's vertical bar together. Attach
+    -- only the carrier selected by the construction-owned cooldown style.
+    if durationBar then
+        button:SetDurationBar(durationBar, {
+            interpolation = STATUS_BAR_IMMEDIATE,
+            direction = STATUS_BAR_ELAPSED_TIME,
+        })
+    elseif cooldown then
+        button:SetDurationCooldown(cooldown)
+    end
     if durationText then
         button:SetDurationText(durationText, {
             binding = CreateCustomAuraDurationTextBinding(),
