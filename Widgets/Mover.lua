@@ -1,6 +1,7 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
 local L = AF.L
+local F = AF.funcs
 
 local MOVER_PARENT_FRAME_LEVEL = 700
 local MOVER_ON_TOP_FRAME_LEVEL = 777
@@ -12,6 +13,113 @@ local anchorLockedText
 local CreatePositionEditorFrame, AnchorPositionEditorFrame, UpdateAndSave, UpdatePositionEditorFrame
 local isAnchorLocked = false
 local modified = {}
+
+-- Retail 12.1.0.68914 (wow-ui-source d3915c78) marks frame points,
+-- dimensions, centers, edges, and scale as secret-capable. GetPoint may also
+-- return nothing. Mover interaction therefore validates every native result
+-- before Lua work and uses AF's ordinary point ledger for initial snapshots.
+local anchorPoints = {
+    CENTER = true,
+    LEFT = true,
+    BOTTOMLEFT = true,
+    BOTTOM = true,
+    BOTTOMRIGHT = true,
+    RIGHT = true,
+    TOPLEFT = true,
+    TOP = true,
+    TOPRIGHT = true,
+}
+
+local function IsOrdinaryNumber(value)
+    return F.isValueNonSecret(value)
+        and type(value) == "number"
+        and value == value
+        and value ~= math.huge
+        and value ~= -math.huge
+end
+
+local function IsOrdinaryFramePoint(value)
+    return F.isValueNonSecret(value)
+        and type(value) == "string"
+        and anchorPoints[value] == true
+end
+
+local function GetOrdinaryPoint(owner)
+    local point, relativeTo, relativePoint, x, y = owner:GetPoint()
+    if not IsOrdinaryFramePoint(point)
+        or not F.isValueNonSecret(relativeTo)
+        or not IsOrdinaryFramePoint(relativePoint)
+        or not IsOrdinaryNumber(x)
+        or not IsOrdinaryNumber(y)
+    then
+        return
+    end
+    return point, relativeTo, relativePoint, x, y
+end
+
+local function GetOrdinaryScale(owner, effective)
+    local scale
+    if effective then
+        scale = owner:GetEffectiveScale()
+    else
+        scale = owner:GetScale()
+    end
+    if not IsOrdinaryNumber(scale) or scale <= 0 then return end
+    return scale
+end
+
+local function GetOrdinaryCenter(region)
+    local x, y = region:GetCenter()
+    if not IsOrdinaryNumber(x) or not IsOrdinaryNumber(y) then return end
+    return x, y
+end
+
+local function GetOrdinarySize(region)
+    local width, height = region:GetSize()
+    if not IsOrdinaryNumber(width) or not IsOrdinaryNumber(height) then return end
+    return width, height
+end
+
+local function GetOrdinaryPositionLedger(owner)
+    local points = owner._points
+    if not F.isValueNonSecret(points) or type(points) ~= "table" then return end
+
+    local position
+    for _, candidate in pairs(points) do
+        if position then return end
+        if not F.isValueNonSecret(candidate) or type(candidate) ~= "table" then return end
+        position = candidate
+    end
+    if not position then return end
+
+    local point = position[1]
+    local relativeTo = position[2]
+    local relativePoint = position[3]
+    local x = position[4]
+    local y = position[5]
+    if not IsOrdinaryFramePoint(point)
+        or not F.isValueNonSecret(relativeTo)
+        or not IsOrdinaryFramePoint(relativePoint)
+        or not IsOrdinaryNumber(x)
+        or not IsOrdinaryNumber(y)
+    then
+        return
+    end
+
+    return point, x, y
+end
+
+local function ApplyOwnerPoint(owner, point, x, y)
+    if not IsOrdinaryFramePoint(point)
+        or not IsOrdinaryNumber(x)
+        or not IsOrdinaryNumber(y)
+    then
+        return false
+    end
+    owner:ClearAllPoints()
+    owner:SetPoint(point, x, y)
+    return true
+end
 
 ---------------------------------------------------------------------
 -- base
@@ -39,10 +147,6 @@ local function UpdateLines()
 
     local width, height = alignmentGrid:GetSize()
     local halfWidth, halfHeight = width / 2, height / 2
-
-    -- center cross
-    local centerX = math.floor((width - 1) / 2)
-    local centerY = math.floor((height - 1) / 2)
 
     -- v center
     CreateLine("c_v", "red", 0.75, 0, 0, 1, height, 1)
@@ -216,21 +320,41 @@ end
 -- calc best point
 ---------------------------------------------------------------------
 ---@param owner Frame
----@return string point, number x, number y
+---@return string|nil point, number|nil x, number|nil y
 function AF.CalcPoint(owner)
     local point, x, y
-    local scale = owner:GetScale()
 
     if isAnchorLocked then
-        point, _, _, x, y = owner:GetPoint()
+        point, _, _, x, y = GetOrdinaryPoint(owner)
+        if not point then return end
     else
-        x, y = owner:GetCenter()
+        local scale = GetOrdinaryScale(owner)
+        if not scale then return end
 
-        local centerX, centerY = AF.UIParent:GetCenter()
-        centerX = centerX / scale
-        centerY = centerY / scale
+        x, y = GetOrdinaryCenter(owner)
+        if not x then return end
+
+        local centerX, centerY = GetOrdinaryCenter(AF.UIParent)
+        if not centerX then return end
 
         local width = AF.UIParent:GetRight()
+        local parentTop = AF.UIParent:GetTop()
+        local ownerTop = owner:GetTop()
+        local ownerBottom = owner:GetBottom()
+        local ownerRight = owner:GetRight()
+        local ownerLeft = owner:GetLeft()
+        if not IsOrdinaryNumber(width)
+            or not IsOrdinaryNumber(parentTop)
+            or not IsOrdinaryNumber(ownerTop)
+            or not IsOrdinaryNumber(ownerBottom)
+            or not IsOrdinaryNumber(ownerRight)
+            or not IsOrdinaryNumber(ownerLeft)
+        then
+            return
+        end
+
+        centerX = centerX / scale
+        centerY = centerY / scale
         width = width / scale
 
         -- local ownerScale = owner:GetEffectiveScale()
@@ -239,18 +363,18 @@ function AF.CalcPoint(owner)
 
         if y >= centerY then
             point = "TOP"
-            y = -(AF.UIParent:GetTop() / scale - owner:GetTop())
+            y = -(parentTop / scale - ownerTop)
         else
             point = "BOTTOM"
-            y = owner:GetBottom()
+            y = ownerBottom
         end
 
         if x >= (width * 2 / 3) then
             point = point .. "RIGHT"
-            x = owner:GetRight() - width
+            x = ownerRight - width
         elseif x <= (width / 3) then
             point = point .. "LEFT"
-            x = owner:GetLeft()
+            x = ownerLeft
         else
             x = x - centerX
         end
@@ -263,36 +387,56 @@ function AF.CalcPoint(owner)
 end
 
 local function RePoint(owner, newPoint)
-    local scale = owner:GetScale()
-    local x, y = owner:GetCenter()
+    if not owner or not IsOrdinaryFramePoint(newPoint) then return false end
 
-    local centerX, centerY = AF.UIParent:GetCenter()
-    centerX = centerX / scale
-    centerY = centerY / scale
+    local scale = GetOrdinaryScale(owner)
+    if not scale then return false end
+
+    local x, y = GetOrdinaryCenter(owner)
+    if not x then return false end
+
+    local centerX, centerY = GetOrdinaryCenter(AF.UIParent)
+    if not centerX then return false end
 
     local width = AF.UIParent:GetRight()
+    local parentTop = AF.UIParent:GetTop()
+    local ownerTop = owner:GetTop()
+    local ownerBottom = owner:GetBottom()
+    local ownerLeft = owner:GetLeft()
+    local ownerRight = owner:GetRight()
+    if not IsOrdinaryNumber(width)
+        or not IsOrdinaryNumber(parentTop)
+        or not IsOrdinaryNumber(ownerTop)
+        or not IsOrdinaryNumber(ownerBottom)
+        or not IsOrdinaryNumber(ownerLeft)
+        or not IsOrdinaryNumber(ownerRight)
+    then
+        return false
+    end
+
+    centerX = centerX / scale
+    centerY = centerY / scale
     width = width / scale
 
     if strfind(newPoint, "^TOP") then
-        y = -(AF.UIParent:GetTop() / scale - owner:GetTop())
+        y = -(parentTop / scale - ownerTop)
     elseif strfind(newPoint, "^BOTTOM") then
-        y = owner:GetBottom()
+        y = ownerBottom
     else
         y = y - centerY
     end
 
     if strfind(newPoint, "LEFT$") then
-        x = owner:GetLeft()
+        x = ownerLeft
     elseif strfind(newPoint, "RIGHT$") then
-        x = owner:GetRight() - width
+        x = ownerRight - width
     else
         x = x - centerX
     end
 
-    owner:ClearAllPoints()
-    owner:SetPoint(newPoint, x, y)
-    UpdateAndSave(owner, newPoint, x, y)
+    if not UpdateAndSave(owner, newPoint, x, y) then return false end
     UpdatePositionEditorFrame(owner)
+    return true
 end
 
 ---------------------------------------------------------------------
@@ -322,7 +466,9 @@ CreatePositionEditorFrame = function()
             ["value"] = anchor,
             ["texture"] = AF.GetIcon("Anchor_" .. anchor),
             ["onClick"] = function()
-                RePoint(positionEditorFrame.owner, anchor)
+                if positionEditorFrame.owner then
+                    RePoint(positionEditorFrame.owner, anchor)
+                end
             end
         })
     end
@@ -360,21 +506,37 @@ CreatePositionEditorFrame = function()
 
     -- edit x
     positionEditorFrame.x:SetOnEditFocusGained(function()
-        positionEditorFrame._x = positionEditorFrame.x:GetNumber()
+        local value = positionEditorFrame.x:GetNumber()
+        positionEditorFrame._x = IsOrdinaryNumber(value) and value or nil
     end)
     positionEditorFrame.x:SetOnEditFocusLost(function()
-        positionEditorFrame.x:SetText(positionEditorFrame._x)
+        if IsOrdinaryNumber(positionEditorFrame._x) then
+            positionEditorFrame.x:SetText(positionEditorFrame._x)
+        end
     end)
     positionEditorFrame.x:SetOnEnterPressed(function(text)
+        if not F.isValueNonSecret(text) then return end
         local v = tonumber(text)
-        if v then
+        if IsOrdinaryNumber(v) then
             positionEditorFrame._x = v
 
             local owner = positionEditorFrame.owner
-            local _p, _, _, _x, _y = owner:GetPoint()
+            if not owner then return end
+
+            local _p, _, _, _, _y = GetOrdinaryPoint(owner)
+            local parentRight = AF.UIParent:GetRight()
+            local scale = GetOrdinaryScale(owner)
+            local ownerWidth = owner:GetWidth()
+            if not _p
+                or not IsOrdinaryNumber(parentRight)
+                or not scale
+                or not IsOrdinaryNumber(ownerWidth)
+            then
+                return
+            end
 
             -- validate
-            local mv = AF.UIParent:GetRight() / owner:GetScale() - owner:GetWidth()
+            local mv = parentRight / scale - ownerWidth
             if strfind(_p, "LEFT$") then
                 v = AF.Clamp(v, 0, mv)
             elseif strfind(_p, "RIGHT$") then
@@ -383,31 +545,45 @@ CreatePositionEditorFrame = function()
                 v = AF.Clamp(v, -mv / 2, mv / 2)
             end
 
-            owner:ClearAllPoints()
-            owner:SetPoint(_p, v, _y)
-
-            UpdateAndSave(owner, AF.CalcPoint(owner))
-            AnchorPositionEditorFrame(owner)
+            if UpdateAndSave(owner, _p, v, _y) then
+                AnchorPositionEditorFrame(owner)
+            end
         end
     end)
 
     -- edit y
     positionEditorFrame.y:SetOnEditFocusGained(function()
-        positionEditorFrame._y = positionEditorFrame.y:GetNumber()
+        local value = positionEditorFrame.y:GetNumber()
+        positionEditorFrame._y = IsOrdinaryNumber(value) and value or nil
     end)
     positionEditorFrame.y:SetOnEditFocusLost(function()
-        positionEditorFrame.y:SetText(positionEditorFrame._y)
+        if IsOrdinaryNumber(positionEditorFrame._y) then
+            positionEditorFrame.y:SetText(positionEditorFrame._y)
+        end
     end)
     positionEditorFrame.y:SetOnEnterPressed(function(text)
+        if not F.isValueNonSecret(text) then return end
         local v = tonumber(text)
-        if v then
+        if IsOrdinaryNumber(v) then
             positionEditorFrame._y = v
 
             local owner = positionEditorFrame.owner
-            local _p, _, _, _x, _y = owner:GetPoint()
+            if not owner then return end
+
+            local _p, _, _, _x = GetOrdinaryPoint(owner)
+            local parentTop = AF.UIParent:GetTop()
+            local scale = GetOrdinaryScale(owner)
+            local ownerHeight = owner:GetHeight()
+            if not _p
+                or not IsOrdinaryNumber(parentTop)
+                or not scale
+                or not IsOrdinaryNumber(ownerHeight)
+            then
+                return
+            end
 
             -- validate
-            local mv = AF.UIParent:GetTop() / owner:GetScale() - owner:GetHeight()
+            local mv = parentTop / scale - ownerHeight
             if strfind(_p, "^BOTTOM") then
                 v = AF.Clamp(v, 0, mv)
             elseif strfind(_p, "^TOP") then
@@ -416,11 +592,9 @@ CreatePositionEditorFrame = function()
                 v = AF.Clamp(v, -mv / 2, mv / 2)
             end
 
-            owner:ClearAllPoints()
-            owner:SetPoint(_p, _x, v)
-
-            UpdateAndSave(owner, AF.CalcPoint(owner))
-            AnchorPositionEditorFrame(owner)
+            if UpdateAndSave(owner, _p, _x, v) then
+                AnchorPositionEditorFrame(owner)
+            end
         end
     end)
 
@@ -436,8 +610,18 @@ CreatePositionEditorFrame = function()
     positionEditorFrame.undo:SetScript("OnClick", function()
         positionEditorFrame.undo:SetEnabled(false)
         local owner = positionEditorFrame.owner
-        UpdateAndSave(owner, owner.mover._original[1], owner.mover._original[2], owner.mover._original[3], true)
-        AnchorPositionEditorFrame(owner)
+        local original = owner and owner.mover and owner.mover._original
+        if original
+            and UpdateAndSave(
+                owner,
+                original[1],
+                original[2],
+                original[3],
+                true
+            )
+        then
+            AnchorPositionEditorFrame(owner)
+        end
     end)
 end
 
@@ -446,7 +630,14 @@ UpdatePositionEditorFrame = function(owner)
 
     positionEditorFrame.tp:SetTitle(owner.mover.text:GetText())
 
-    local p, _, _, x, y = owner:GetPoint()
+    local p, _, _, x, y = GetOrdinaryPoint(owner)
+    local scale = GetOrdinaryScale(owner)
+    if not p or not scale then
+        positionEditorFrame.owner = nil
+        positionEditorFrame:Hide()
+        return false
+    end
+
     x = AF.RoundToDecimal(x, 1)
     y = AF.RoundToDecimal(y, 1)
 
@@ -458,24 +649,30 @@ UpdatePositionEditorFrame = function(owner)
     positionEditorFrame.x:SetText(x)
     positionEditorFrame.y:SetText(y)
 
-    positionEditorFrame.scale:SetFormattedText("x%.2f", owner:GetScale())
+    positionEditorFrame.scale:SetFormattedText("x%.2f", scale)
 
     if owner.mover._original and (owner.mover._original[1] ~= p or owner.mover._original[2] ~= x or owner.mover._original[3] ~= y) then
         positionEditorFrame.undo:SetEnabled(true)
     else
         positionEditorFrame.undo:SetEnabled(false)
     end
+    return true
 end
 
 AnchorPositionEditorFrame = function(owner)
-    if not positionEditorFrame then return end
-
-    positionEditorFrame.owner = owner
+    if not (positionEditorFrame and owner and owner.mover) then return false end
 
     -- NOTE: mover's parent is AFMoverParent, scale is always 1
-    local centerX, centerY = AF.UIParent:GetCenter()
+    local centerX, centerY = GetOrdinaryCenter(AF.UIParent)
     local width = AF.UIParent:GetRight()
-    local x, y = owner.mover:GetCenter()
+    local x, y = GetOrdinaryCenter(owner.mover)
+    if not centerX or not IsOrdinaryNumber(width) or not x then
+        positionEditorFrame.owner = nil
+        positionEditorFrame:Hide()
+        return false
+    end
+
+    positionEditorFrame.owner = owner
 
     local point, relativePoint
 
@@ -505,7 +702,8 @@ AnchorPositionEditorFrame = function(owner)
         AF.SetPoint(anchorLockedText, "TOP", owner.mover, "BOTTOM", 0, -1)
     end
 
-    UpdatePositionEditorFrame(owner)
+    if not UpdatePositionEditorFrame(owner) then return false end
+    return true
 end
 
 local function TogglePositionAdjustmentFrame(owner)
@@ -514,7 +712,9 @@ local function TogglePositionAdjustmentFrame(owner)
         positionEditorFrame.owner = nil
     else
         positionEditorFrame:Show()
-        AnchorPositionEditorFrame(owner)
+        if not AnchorPositionEditorFrame(owner) then
+            positionEditorFrame:Hide()
+        end
     end
 end
 
@@ -522,6 +722,15 @@ end
 -- save
 ---------------------------------------------------------------------
 UpdateAndSave = function(owner, p, x, y, isUndo)
+    if not owner
+        or not owner.mover
+        or not IsOrdinaryFramePoint(p)
+        or not IsOrdinaryNumber(x)
+        or not IsOrdinaryNumber(y)
+    then
+        return false
+    end
+
     -- update ._points
     owner._useOriginalPoints = true
     owner._points = {}
@@ -543,16 +752,27 @@ UpdateAndSave = function(owner, p, x, y, isUndo)
     else
         modified[owner] = true
     end
-    if next(modified) then
-        moverDialog.undo:SetEnabled(true)
-    else
-        moverDialog.undo:SetEnabled(false)
+    if moverDialog and moverDialog.undo then
+        if next(modified) then
+            moverDialog.undo:SetEnabled(true)
+        else
+            moverDialog.undo:SetEnabled(false)
+        end
     end
+    return true
 end
 
 ---------------------------------------------------------------------
 -- stop moving
 ---------------------------------------------------------------------
+local function RestoreMovement(owner)
+    local mover = owner.mover
+    local original = mover._movementOriginal
+    mover._movementOriginal = nil
+    if not original then return false end
+    return ApplyOwnerPoint(owner, original[1], original[2], original[3])
+end
+
 local function StopMoving(owner)
     owner.mover:SetScript("OnUpdate", nil)
     if owner.mover.moved then
@@ -560,18 +780,35 @@ local function StopMoving(owner)
 
         -- calc new point
         local p, x, y = AF.CalcPoint(owner)
-        UpdateAndSave(owner, p, x, y)
+        if p and UpdateAndSave(owner, p, x, y) then
+            owner.mover._movementOriginal = nil
+            return true
+        end
+        RestoreMovement(owner)
+        return false
     end
+    owner.mover._movementOriginal = nil
+    return true
 end
 
 ---------------------------------------------------------------------
 -- min.max
 ---------------------------------------------------------------------
-local function GetMinMaxOffsets(owner)
-    local point = owner:GetPoint()
-    local scale = owner:GetScale()
+local function GetMinMaxOffsets(owner, point)
+    if not point then
+        point = GetOrdinaryPoint(owner)
+    end
+    if not IsOrdinaryFramePoint(point) then return end
 
-    local width, height = AF.UIParent:GetWidth(), AF.UIParent:GetHeight()
+    local scale = GetOrdinaryScale(owner)
+    if not scale then return end
+
+    local width, height = GetOrdinarySize(AF.UIParent)
+    if not width then return end
+
+    local ownerWidth, ownerHeight = GetOrdinarySize(owner)
+    if not ownerWidth then return end
+
     width = width / scale
     height = height / scale
 
@@ -579,27 +816,39 @@ local function GetMinMaxOffsets(owner)
 
     if strfind(point, "^BOTTOM") then
         minY = 0
-        maxY = height - owner:GetHeight()
+        maxY = height - ownerHeight
     elseif strfind(point, "^TOP") then
-        minY = -(height - owner:GetHeight())
+        minY = -(height - ownerHeight)
         maxY = 0
     else -- LEFT/RIGHT/CENTER
-        minY = -((height - owner:GetHeight()) / 2)
-        maxY = (height - owner:GetHeight()) / 2
+        minY = -((height - ownerHeight) / 2)
+        maxY = (height - ownerHeight) / 2
     end
 
     if strfind(point, "LEFT$") then
         minX = 0
-        maxX = width - owner:GetWidth()
+        maxX = width - ownerWidth
     elseif strfind(point, "RIGHT$") then
-        minX = -(width - owner:GetWidth())
+        minX = -(width - ownerWidth)
         maxX = 0
     else -- TOP/BOTTOM/CENTER
-        minX = -((width - owner:GetWidth()) / 2)
-        maxX = (width - owner:GetWidth()) / 2
+        minX = -((width - ownerWidth) / 2)
+        maxX = (width - ownerWidth) / 2
     end
 
     return minX, maxX, minY, maxY
+end
+
+local function CaptureOriginal(mover)
+    if mover._original then return true end
+    local point, x, y = GetOrdinaryPositionLedger(mover.owner)
+    if not point then return false end
+    mover._original = {
+        point,
+        AF.RoundToDecimal(x, 1),
+        AF.RoundToDecimal(y, 1),
+    }
+    return true
 end
 
 ---------------------------------------------------------------------
@@ -637,18 +886,38 @@ function AF.CreateMover(owner, group, text, save)
 
     mover:SetScript("OnMouseDown", function(self, button)
         if button ~= "LeftButton" then return end
-        mover.isDragging = true
 
         local mouseX, mouseY = GetCursorPosition()
+        if not IsOrdinaryNumber(mouseX) or not IsOrdinaryNumber(mouseY) then return end
+
         local lastX, lastY = mouseX, mouseY
 
-        local effectiveScale = owner:GetEffectiveScale()
-        local point, _, _, startX, startY = owner:GetPoint()
+        local effectiveScale = GetOrdinaryScale(owner, true)
+        local point, _, _, startX, startY = GetOrdinaryPoint(owner)
+        if not effectiveScale or not point then return end
 
-        local minX, maxX, minY, maxY = GetMinMaxOffsets(owner)
+        local minX, maxX, minY, maxY = GetMinMaxOffsets(owner, point)
+        if not minX then return end
+
+        mover.isDragging = true
+        mover._movementOriginal = {point, startX, startY}
 
         mover:SetScript("OnUpdate", function()
             local newMouseX, newMouseY = GetCursorPosition()
+            if not IsOrdinaryNumber(newMouseX)
+                or not IsOrdinaryNumber(newMouseY)
+            then
+                mover:SetScript("OnUpdate", nil)
+                mover.isDragging = nil
+                if mover.moved then
+                    mover.moved = nil
+                    RestoreMovement(owner)
+                else
+                    mover._movementOriginal = nil
+                end
+                UpdatePositionEditorFrame(owner)
+                return
+            end
             if newMouseX == lastX and newMouseY == lastY then return end
 
             lastX = newMouseX
@@ -661,8 +930,13 @@ function AF.CreateMover(owner, group, text, save)
             newY = AF.Clamp(newY, minY, maxY)
 
             -- print(newX, newY)
-            owner:ClearAllPoints()
-            owner:SetPoint(point, newX, newY)
+            if not ApplyOwnerPoint(owner, point, newX, newY) then
+                mover:SetScript("OnUpdate", nil)
+                mover.isDragging = nil
+                mover.moved = nil
+                RestoreMovement(owner)
+                return
+            end
             mover.moved = true
 
             AnchorPositionEditorFrame(owner)
@@ -693,33 +967,43 @@ function AF.CreateMover(owner, group, text, save)
 
     mover:SetScript("OnMouseWheel", function(self, delta)
         if mover.isDragging then return end
+        if not IsOrdinaryNumber(delta) then return end
 
-        local point, _, _, startX, startY = owner:GetPoint()
+        local point, _, _, startX, startY = GetOrdinaryPoint(owner)
+        if not point then return end
+
         startX = AF.RoundToDecimal(startX, 1)
         startY = AF.RoundToDecimal(startY, 1)
 
-        mover.moved = true
+        local minX, maxX, minY, maxY = GetMinMaxOffsets(owner, point)
+        if not minX then return end
 
-        local minX, maxX, minY, maxY = GetMinMaxOffsets(owner)
+        local newX, newY = startX, startY
 
         if delta == 1 then
             if IsShiftKeyDown() then
                 -- move right
-                owner:SetPoint(point, AF.Clamp(startX + 1, minX, maxX), startY)
+                newX = AF.Clamp(startX + 1, minX, maxX)
             else
                 -- move up
-                owner:SetPoint(point, startX, AF.Clamp(startY + 1, minY, maxY))
+                newY = AF.Clamp(startY + 1, minY, maxY)
             end
         else
             if IsShiftKeyDown() then
                 -- move left
-                owner:SetPoint(point, AF.Clamp(startX - 1, minX, maxX), startY)
+                newX = AF.Clamp(startX - 1, minX, maxX)
             else
                 -- move down
-                owner:SetPoint(point, startX, AF.Clamp(startY - 1, minY, maxY))
+                newY = AF.Clamp(startY - 1, minY, maxY)
             end
         end
 
+        mover._movementOriginal = {point, startX, startY}
+        if not ApplyOwnerPoint(owner, point, newX, newY) then
+            mover._movementOriginal = nil
+            return
+        end
+        mover.moved = true
         StopMoving(owner)
 
         -- update
@@ -756,12 +1040,6 @@ function AF.CreateMover(owner, group, text, save)
         end
     end)
 
-    mover:SetScript("OnShow", function()
-        if not mover._original then
-            local p, _, _, x, y = owner:GetPoint()
-            mover._original = {p, AF.RoundToDecimal(x, 1), AF.RoundToDecimal(y, 1)}
-        end
-    end)
 end
 
 ---@param save function|table
@@ -784,7 +1062,10 @@ function AF.ShowMovers(group)
             show = group == g
         end
         for _, m in pairs(gt) do
-            if show and (type(m.owner.enabled) ~= "boolean" or m.owner.enabled) then
+            if show
+                and (type(m.owner.enabled) ~= "boolean" or m.owner.enabled)
+                and CaptureOriginal(m)
+            then
                 m:Show()
             else
                 m:Hide()
@@ -826,7 +1107,13 @@ function AF.UndoMovers()
     for _, g in pairs(movers) do
         for _, m in pairs(g) do
             if m._original then
-                UpdateAndSave(m.owner, m._original[1], m._original[2], m._original[3], true)
+                UpdateAndSave(
+                    m.owner,
+                    m._original[1],
+                    m._original[2],
+                    m._original[3],
+                    true
+                )
             end
         end
     end
