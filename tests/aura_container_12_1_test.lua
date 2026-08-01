@@ -301,12 +301,16 @@ local function makeButton(state)
         bind("SetIcon", ...)
     end
 
-    function button:SetDurationCooldown(...)
-        bind("SetDurationCooldown", ...)
+    function button:SetDurationCooldown(cooldown, ...)
+        bind("SetDurationCooldown", cooldown, ...)
+        -- Native duration updates can reactivate a registered carrier.
+        cooldown.shown = true
     end
 
-    function button:SetDurationBar(...)
-        bind("SetDurationBar", ...)
+    function button:SetDurationBar(durationBar, ...)
+        bind("SetDurationBar", durationBar, ...)
+        -- Native duration updates can reactivate a registered carrier.
+        durationBar.shown = true
     end
 
     function button:SetDurationText(...)
@@ -1064,21 +1068,12 @@ assertEqual(nativeDispelOverlay.texture, state.squareBorderTexture,
     "native dispel square border texture")
 assertEqual(findCall(nativeDispelOverlay.calls, "SetTexCoord"), nil,
     "native dispel border must use the complete square asset")
-local durationBarArguments = firstButton.bindings.SetDurationBar
-assertEqual(durationBarArguments.n, 2, "duration bar binding argument count")
-local durationBar = durationBarArguments[1]
-local durationBarOptions = durationBarArguments[2]
-assertEqual(durationBar.frameType, "StatusBar", "duration bar object type")
-assertEqual(
-    durationBarOptions.interpolation,
-    api.Enum.StatusBarInterpolation.Immediate,
-    "duration bar interpolation"
-)
-assertEqual(
-    durationBarOptions.direction,
-    api.Enum.StatusBarTimerDirection.ElapsedTime,
-    "duration bar timer direction"
-)
+assertEqual(firstButton.bindings.SetDurationBar, nil,
+    "block clock inactive duration bar binding")
+assertEqual(#firstButton.frames, 2,
+    "block clock graphical frame allocation")
+assertEqual(firstButton.frames[1].frameType, "Cooldown",
+    "block clock graphical duration frame type")
 assertEqual(cooldown.hideCountdownNumbers, true, "cooldown countdown suppression")
 assertEqual(cooldown.noCooldownCount, true, "third-party countdown suppression")
 assertEqual(cooldown.shown, true, "block clock cooldown sweep visibility")
@@ -1086,14 +1081,6 @@ assertEqual(cooldown.drawEdge, true,
     "block clock leading-edge visibility")
 assertEqual(findCall(cooldown.calls, "SetSwipeColor"), nil,
     "block clock native swipe color ownership")
-assertEqual(durationBar.shown, false, "block clock duration bar visibility")
-assertEqual(durationBar.orientation, "VERTICAL", "duration bar orientation")
-assertEqual(durationBar.reverseFill, true, "duration bar reverse fill")
-assertEqual(durationBar.statusBarTexture, state.plainTexture, "duration bar texture")
-assertCall({
-    name = "SetStatusBarColor",
-    args = durationBar.statusBarColor,
-}, "SetStatusBarColor", 0, 0, 0, 0.75)
 assertCall({
     name = "SetColorTexture",
     args = blockBackground.colorTexture,
@@ -1106,11 +1093,7 @@ assertCall({
 }, "SetFrameLevel", 1, firstButton)
 assertCall({
     name = "SetFrameLevel",
-    args = durationBar.frameLevel,
-}, "SetFrameLevel", 1, firstButton)
-assertCall({
-    name = "SetFrameLevel",
-    args = firstButton.frames[3].frameLevel,
+    args = firstButton.frames[2].frameLevel,
 }, "SetFrameLevel", 2, firstButton)
 local durationArguments = firstButton.bindings.SetDurationText
 assertEqual(durationArguments.n, 2, "duration binding argument count")
@@ -1207,7 +1190,8 @@ assertEqual(slotCall.args[3].anchor, nil, "AF-only slot anchor forwarded nativel
 assertEqual(slotOptions.anchor.relativeTo, slotAnchorTarget, "caller slot anchor mutated")
 local slotIcon = slotButton.bindings.SetIcon[1]
 local slotCooldown = slotButton.bindings.SetDurationCooldown[1]
-local slotDurationBar = slotButton.bindings.SetDurationBar[1]
+assertEqual(slotButton.bindings.SetDurationBar, nil,
+    "clock inactive duration bar binding")
 local slotBlockBackground = slotButton.regions[4]
 assertEqual(slotCooldown.hideCountdownNumbers, true,
     "clock cooldown countdown suppression")
@@ -1215,7 +1199,6 @@ assertEqual(slotCooldown.noCooldownCount, true,
     "clock third-party countdown suppression")
 assertEqual(slotCooldown.shown, true, "clock cooldown sweep visibility")
 assertEqual(slotCooldown.drawEdge, true, "clock cooldown edge visibility")
-assertEqual(slotDurationBar.shown, false, "clock duration bar visibility")
 assertEqual(slotBlockBackground.shown, false,
     "ordinary clock block background visibility")
 assertEqual(slotIcon.shown, true, "clock icon visibility")
@@ -1269,13 +1252,31 @@ assertEqual(enchantmentButton, container.buttons[3], "enchantment return value")
 assertEqual(defaultBlockButtonStyle.blockColor, nil,
     "caller default block color mutated")
 local enchantmentIcon = enchantmentButton.bindings.SetIcon[1]
-local enchantmentCooldown = enchantmentButton.bindings.SetDurationCooldown[1]
-local enchantmentDurationBar = enchantmentButton.bindings.SetDurationBar[1]
+assertEqual(enchantmentButton.bindings.SetDurationCooldown, nil,
+    "block vertical inactive cooldown binding")
+local enchantmentDurationBarArguments =
+    enchantmentButton.bindings.SetDurationBar
+assertEqual(enchantmentDurationBarArguments.n, 2,
+    "block vertical duration bar binding argument count")
+local enchantmentDurationBar = enchantmentDurationBarArguments[1]
+local enchantmentDurationBarOptions = enchantmentDurationBarArguments[2]
 local enchantmentBlockBackground = enchantmentButton.regions[4]
-assertEqual(enchantmentCooldown.shown, false,
-    "native block vertical cooldown visibility")
+assertEqual(enchantmentButton.frames[1], enchantmentDurationBar,
+    "block vertical graphical duration frame identity")
+assertEqual(enchantmentButton.frames[1].frameType, "StatusBar",
+    "block vertical graphical duration frame type")
 assertEqual(enchantmentDurationBar.shown, true,
     "native block vertical duration bar visibility")
+assertEqual(
+    enchantmentDurationBarOptions.interpolation,
+    api.Enum.StatusBarInterpolation.Immediate,
+    "block vertical duration bar interpolation"
+)
+assertEqual(
+    enchantmentDurationBarOptions.direction,
+    api.Enum.StatusBarTimerDirection.ElapsedTime,
+    "block vertical duration bar timer direction"
+)
 assertCall({
     name = "SetStatusBarColor",
     args = enchantmentDurationBar.statusBarColor,
@@ -1715,6 +1716,44 @@ assertEqual(state.auraDataProviderResetCalls, 0, "native provider reset ownershi
 assertEqual(failureState.auraDataProviderSwitchCalls, 0, "failure provider switch ownership")
 assertEqual(failureState.auraDataProviderResetCalls, 0, "failure provider reset ownership")
 
+local verticalAF, verticalState = loadAuraModule(true, false)
+local verticalContainer = verticalAF.CreateCustomAuraContainer(
+    {},
+    "AFVerticalAuraContainer",
+    "player"
+)
+verticalAF.AddCustomAuraGroup(
+    verticalContainer,
+    "verticalHelpful",
+    "HELPFUL",
+    {maxFrameCount = 1},
+    {
+        noBorder = true,
+        width = 16,
+        height = 16,
+        cooldownStyle = "vertical",
+    }
+)
+local verticalButton = verticalContainer.buttons[1]
+assertEqual(verticalButton.bindings.SetDurationCooldown, nil,
+    "vertical inactive cooldown binding")
+local verticalDurationBarArguments = verticalButton.bindings.SetDurationBar
+assertEqual(verticalDurationBarArguments.n, 2,
+    "vertical duration bar binding argument count")
+local verticalDurationBar = verticalDurationBarArguments[1]
+assertEqual(verticalButton.frames[1], verticalDurationBar,
+    "vertical graphical duration frame identity")
+assertEqual(verticalDurationBar.frameType, "StatusBar",
+    "vertical graphical duration frame type")
+assertEqual(verticalDurationBar.shown, true,
+    "vertical duration bar visibility")
+assertEqual(verticalButton.regions[1].shown, true,
+    "vertical icon visibility")
+assertEqual(verticalButton.regions[2].shown, false,
+    "vertical block background visibility")
+assertEqual(verticalState.aurasSecret, false,
+    "vertical fixture aura secrecy")
+
 local combatAF, combatState = loadAuraModule(true, false)
 combatState.inCombat = true
 combatState.aurasSecret = true
@@ -1735,6 +1774,12 @@ combatAF.AddCustomAuraGroup(
         cooldownStyle = "none",
     }
 )
+assertEqual(combatContainer.buttons[1].bindings.SetDurationCooldown, nil,
+    "none cooldown binding")
+assertEqual(combatContainer.buttons[1].bindings.SetDurationBar, nil,
+    "none duration bar binding")
+assertEqual(combatContainer.buttons[1].frames[1].frameType, "Frame",
+    "none graphical duration frame allocation")
 assertEqual(combatContainer.buttons[1].accessRestricted, true,
     "combat-created aura button access restriction installation")
 assertEqual(combatContainer.buttons[1]:CanBeAccessedInContext(), false,
