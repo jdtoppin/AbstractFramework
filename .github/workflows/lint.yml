@@ -48,5 +48,8 @@ jobs:
       - name: Test Retail 12.1 legacy aura boundary
         run: luajit tests/legacy_aura_12_1_fail_closed_test.lua
 
+      - name: Test position loading
+        run: luajit tests/load_position_test.lua
+
       - name: Validate generated icon assets
         run: node .utils/generate_tabler_icons.cjs --check
