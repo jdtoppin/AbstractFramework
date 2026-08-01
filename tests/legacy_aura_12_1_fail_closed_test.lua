@@ -39,16 +39,21 @@ local function loadAuraHarness(interfaceVersion)
     local enumerationCalls = 0
     local filterCalls = 0
 
+    local function makeFormatter()
+        return setmetatable({}, {
+            __index = function()
+                return function() end
+            end,
+        })
+    end
+
     local AF = {
         isRetail = true,
     }
     local environment = setmetatable({
         C_StringUtil = {
-            CreateNumericRuleFormatter = function()
-                return {
-                    SetBreakpoints = function() end,
-                }
-            end,
+            CreateNumericRuleFormatter = makeFormatter,
+            CreateSecondsFormatter = makeFormatter,
         },
         C_UnitAuras = {
             GetAuraApplicationDisplayCount = function() end,
@@ -68,6 +73,9 @@ local function loadAuraHarness(interfaceVersion)
             end,
         },
         Enum = {
+            SecondsFormatterAbbreviation = {OneLetter = 1},
+            SecondsFormatterInterval = {Seconds = 1, Days = 2},
+            SecondsFormatterIntervalWhitespace = {Strip = 1},
             StatusBarInterpolation = {Immediate = 1},
             StatusBarTimerDirection = {ElapsedTime = 1},
             UnitAuraSortDirection = {Normal = 1},
