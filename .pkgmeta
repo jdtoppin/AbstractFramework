@@ -17,6 +17,7 @@ externals:
 
 ignore:
   - tests
+  - .utils
   - Libs/LibStub/tests
   - Libs/LibStub/LibStub.toc
   - Libs/LibDeflate/docs
