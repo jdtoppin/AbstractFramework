@@ -368,8 +368,7 @@ function AF.InitAura(button, noBorder, visibilityManagedExternally)
     local dispelOverlay = overlayFrame:CreateTexture(nil, "OVERLAY")
     button.dispelOverlay = dispelOverlay
     dispelOverlay:SetAllPoints()
-    dispelOverlay:SetTexture([[Interface\Buttons\UI-Debuff-Overlays]])
-    dispelOverlay:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
+    dispelOverlay:SetTexture(AF.GetTexture("Border"))
     dispelOverlay:Hide()
 
     local durationText = overlayFrame:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
@@ -625,8 +624,9 @@ local function InitializeCustomAuraButton(button, style, anchor)
     if style.dispelColor then
         dispelOverlay = overlayFrame:CreateTexture(nil, "OVERLAY")
         dispelOverlay:SetAllPoints()
-        dispelOverlay:SetTexture([[Interface\Buttons\UI-Debuff-Overlays]])
-        dispelOverlay:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
+        -- PreserveAsset lets Blizzard apply the native dispel color without
+        -- replacing this caller-owned square border with its rounded atlas.
+        dispelOverlay:SetTexture(AF.GetTexture("Border"))
         dispelOverlay:Hide()
     end
 

@@ -510,6 +510,7 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
         auraDataProviderSwitchCalls = 0,
         auraDataProviderResetCalls = 0,
         plainTexture = {},
+        squareBorderTexture = {},
     }
     local environment = {}
     setmetatable(environment, {__index = _G})
@@ -797,6 +798,10 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
         GetPlainTexture = function()
             return state.plainTexture
         end,
+        GetTexture = function(texture)
+            assertEqual(texture, "Border", "requested framework texture")
+            return state.squareBorderTexture
+        end,
         ApplyDefaultBackdrop = function() end,
         SetFrameLevel = function(frame, level, relativeTo)
             frame:SetFrameLevel(level, relativeTo)
@@ -1053,7 +1058,12 @@ assertEqual(restoredAccess, true,
     "restored custom aura button API access")
 local icon = firstButton.bindings.SetIcon[1]
 local cooldown = firstButton.bindings.SetDurationCooldown[1]
+local nativeDispelOverlay = firstButton.bindings.AddDispelTypeTexture[1]
 local blockBackground = firstButton.regions[4]
+assertEqual(nativeDispelOverlay.texture, state.squareBorderTexture,
+    "native dispel square border texture")
+assertEqual(findCall(nativeDispelOverlay.calls, "SetTexCoord"), nil,
+    "native dispel border must use the complete square asset")
 local durationBarArguments = firstButton.bindings.SetDurationBar
 assertEqual(durationBarArguments.n, 2, "duration bar binding argument count")
 local durationBar = durationBarArguments[1]
@@ -1341,6 +1351,10 @@ local legacyCooldown = legacyAura.cooldown
 local legacyDurationBar = legacyAura.durationBar
 local legacyBlockBackground = legacyAura.blockBackground
 local legacyDurationTextBinding = legacyAura.durationTextBinding
+assertEqual(legacyAura.dispelOverlay.texture, state.squareBorderTexture,
+    "legacy dispel square border texture")
+assertEqual(findCall(legacyAura.dispelOverlay.calls, "SetTexCoord"), nil,
+    "legacy dispel border must use the complete square asset")
 assertEqual(legacyCooldown.hideCountdownNumbers, true,
     "legacy cooldown countdown suppression")
 assertEqual(legacyCooldown.noCooldownCount, true,
