@@ -10,6 +10,24 @@ local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
 local STATUS_BAR_IMMEDIATE = Enum.StatusBarInterpolation.Immediate
 local STATUS_BAR_ELAPSED_TIME = Enum.StatusBarTimerDirection.ElapsedTime
 
+-- Retail 12.1.0.68914 (wow-ui-source d3915c78) marks every general
+-- unit-aura enumeration and instance-ID API RequiresUnitAuraAccess with
+-- FailureMode=Error. This is a static client boundary, not a combat or
+-- secrecy probe: live Retail 12.1 rows must use AuraContainers, and an
+-- unavailable native backend must leave legacy widgets inert. Unknown future
+-- Retail interfaces fail closed; pre-12.1 Retail keeps its compatibility path.
+local RETAIL_12_1_INTERFACE_MIN = 120100
+local function CanEnumerateLegacyUnitAuras()
+    if not AF.isRetail then return true end
+
+    local _, _, _, interfaceVersion = GetBuildInfo()
+    interfaceVersion = tonumber(interfaceVersion)
+    return interfaceVersion ~= nil
+        and interfaceVersion < RETAIL_12_1_INTERFACE_MIN
+end
+
+local canEnumerateLegacyUnitAuras = CanEnumerateLegacyUnitAuras()
+
 local durationFormatter = C_StringUtil.CreateNumericRuleFormatter()
 durationFormatter:SetBreakpoints({
     {
@@ -115,6 +133,11 @@ local function SetAuraTimer(aura, duration)
 end
 
 function AF_SecretAuraMixin:SetAura(unit, auraInstanceID)
+    if not canEnumerateLegacyUnitAuras then
+        self:ClearAura()
+        return
+    end
+
     self.unit = unit
     self.auraInstanceID = auraInstanceID
     self.inventorySlot = nil
@@ -553,6 +576,13 @@ function AF_SecretAuraListMixin:SetMaxCount(maxCount)
 end
 
 function AF_SecretAuraListMixin:RefreshAuras()
+    if not canEnumerateLegacyUnitAuras then
+        ClearAuraList(self)
+        ClearAuraList(self.partitionList)
+        self:OnAurasUpdated(0, 0, 0)
+        return
+    end
+
     if not self.unit or not self.filter or not self.maxCount then return end
 
     self:OnBeforeAurasRefresh()
@@ -626,7 +656,7 @@ end
 
 function AF_SecretAuraListMixin:RegisterUnitEvents()
     self:UnregisterAllEvents()
-    if self.unit then
+    if canEnumerateLegacyUnitAuras and self.unit then
         self:RegisterUnitEvent("UNIT_AURA", self.unit)
     end
 end
