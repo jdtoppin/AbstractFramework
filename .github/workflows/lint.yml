@@ -42,5 +42,8 @@ jobs:
       - name: Test adaptive icon selection
         run: luajit tests/adaptive_icon_test.lua
 
+      - name: Test position loading
+        run: luajit tests/load_position_test.lua
+
       - name: Validate generated icon assets
         run: node .utils/generate_tabler_icons.cjs --check
