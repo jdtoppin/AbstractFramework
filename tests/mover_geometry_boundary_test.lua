@@ -29,6 +29,8 @@ local secret = setmetatable({}, {
 
 local cursorX, cursorY = 100, 100
 local shiftDown = false
+local inCombat = false
+local printed = {}
 local frames = {}
 local editBoxes = {}
 local dropdowns = {}
@@ -54,6 +56,7 @@ local function NewFrame(name, parent)
         effectiveScale = 1,
         clearCalls = 0,
         setPointCalls = 0,
+        registeredEvents = {},
     }, Frame)
     frames[#frames + 1] = frame
     return frame
@@ -240,7 +243,6 @@ local noopMethods = {
     "SetFrameLevel",
     "SetFrameStrata",
     "EnableMouse",
-    "RegisterEvent",
     "UnregisterEvent",
     "SetClampedToScreen",
     "SetJustifyH",
@@ -264,6 +266,10 @@ end
 
 function Frame:SetOnEnterPressed(callback)
     self.onEnterPressed = callback
+end
+
+function Frame:RegisterEvent(event)
+    self.registeredEvents[event] = true
 end
 
 local uiParent = NewFrame("AFParent")
@@ -395,18 +401,22 @@ function AF.UpdatePixelsForRegionAndChildren() end
 function AF.CloseDropdown() end
 function AF.FrameFadeIn() end
 function AF.FrameFadeOut() end
+function AF.Print(message)
+    printed[#printed + 1] = message
+end
 
 local environment = {
     _G = false,
     AbstractFramework = AF,
     ALL = "All",
+    ERR_AFFECTING_COMBAT = "That action is unavailable during combat.",
     CreateFrame = function(_, name, parent)
         return NewFrame(name, parent)
     end,
     C_Timer = {
         After = function(_, callback) callback() end,
     },
-    InCombatLockdown = function() return false end,
+    InCombatLockdown = function() return inCombat end,
     GetCursorPosition = function() return cursorX, cursorY end,
     IsShiftKeyDown = function() return shiftDown end,
     strfind = string.find,
@@ -426,6 +436,17 @@ setfenv(chunk, environment)
 chunk("AbstractFramework", AF)
 
 AF.InitMoverParent()
+
+local moverParent
+for _, frame in ipairs(frames) do
+    if frame.name == "AFMoverParent" then
+        moverParent = frame
+        break
+    end
+end
+assertTrue(moverParent ~= nil, "mover parent created")
+assertTrue(moverParent.registeredEvents.PLAYER_REGEN_DISABLED,
+    "mover parent listens for combat entry")
 
 local function NewOwner(name, point, x, y)
     local owner = NewFrame(name, AF.UIParent)
@@ -547,5 +568,80 @@ local savesBeforeUndo = saves
 AF.UndoMovers()
 assertEqual(saves, savesBeforeUndo + 1, "valid original remains undoable")
 assertEqual(unanchoredOwner.clearCalls, 0, "unavailable mover ignored by undo")
+
+-- Combat entry must stop an in-progress drag without touching its potentially
+-- protected owner. The last ordinary cursor update may already have moved the
+-- owner, but combat shutdown must not settle, restore, or save that position.
+cursorX, cursorY = 100, 100
+validOwner.mover:RunScript("OnMouseDown", "LeftButton")
+cursorX, cursorY = 115, 105
+validOwner.mover:RunScript("OnUpdate")
+assertTrue(validOwner.mover.moved, "combat fixture moves before lockdown")
+
+local clearBeforeCombatClose = validOwner.clearCalls
+local setBeforeCombatClose = validOwner.setPointCalls
+local savesBeforeCombatClose = saves
+inCombat = true
+moverParent:RunScript("OnEvent", "PLAYER_REGEN_DISABLED")
+assertFalse(moverParent:IsShown(), "combat entry hides mover parent")
+assertFalse(validOwner.mover:IsShown(), "combat entry hides mover")
+assertEqual(validOwner.mover:GetScript("OnUpdate"), nil,
+    "combat entry removes drag update")
+assertEqual(validOwner.mover.isDragging, nil, "combat entry clears drag state")
+assertEqual(validOwner.mover.moved, nil, "combat entry clears movement state")
+assertEqual(validOwner.mover._movementOriginal, nil,
+    "combat entry clears movement rollback state")
+assertEqual(validOwner.mover._original, nil,
+    "combat entry clears undo snapshot")
+assertEqual(validOwner.clearCalls, clearBeforeCombatClose,
+    "combat close does not clear owner points")
+assertEqual(validOwner.setPointCalls, setBeforeCombatClose,
+    "combat close does not set owner points")
+assertEqual(saves, savesBeforeCombatClose, "combat close does not save owner")
+
+cursorX, cursorY = 130, 120
+validOwner.mover:RunScript("OnUpdate")
+assertEqual(validOwner.clearCalls, clearBeforeCombatClose,
+    "stopped drag cannot mutate owner after combat close")
+assertEqual(validOwner.setPointCalls, setBeforeCombatClose,
+    "stopped drag cannot reanchor owner after combat close")
+
+local warningsBeforeShow = #printed
+assertFalse(AF.ShowMovers(), "show movers is blocked during combat")
+assertFalse(moverParent:IsShown(), "blocked show leaves mover parent hidden")
+assertEqual(#printed, warningsBeforeShow + 1,
+    "blocked show prints one combat warning")
+assertEqual(printed[#printed], environment.ERR_AFFECTING_COMBAT,
+    "blocked show uses localized combat warning")
+
+local warningsBeforeToggle = #printed
+assertFalse(AF.ToggleMovers(), "toggle movers is blocked during combat")
+assertEqual(#printed, warningsBeforeToggle + 1,
+    "blocked toggle prints one combat warning")
+
+-- The drag update contains its own lockdown guard in case combat state flips
+-- before PLAYER_REGEN_DISABLED is dispatched to the mover parent.
+inCombat = false
+assertTrue(AF.ShowMovers(), "movers reopen out of combat")
+cursorX, cursorY = 200, 200
+validOwner.mover:RunScript("OnMouseDown", "LeftButton")
+assertTrue(validOwner.mover.isDragging, "race fixture begins drag")
+local clearBeforeUpdateGuard = validOwner.clearCalls
+local setBeforeUpdateGuard = validOwner.setPointCalls
+local savesBeforeUpdateGuard = saves
+inCombat = true
+cursorX, cursorY = 220, 220
+validOwner.mover:RunScript("OnUpdate")
+assertFalse(moverParent:IsShown(), "drag update hard-closes during lockdown")
+assertEqual(validOwner.clearCalls, clearBeforeUpdateGuard,
+    "drag lockdown guard does not clear owner points")
+assertEqual(validOwner.setPointCalls, setBeforeUpdateGuard,
+    "drag lockdown guard does not set owner points")
+assertEqual(saves, savesBeforeUpdateGuard,
+    "drag lockdown guard does not save owner")
+
+inCombat = false
+assertFalse(moverParent:IsShown(),
+    "movers do not reopen automatically after combat")
 
 print("mover_geometry_boundary_test.lua: ok")
