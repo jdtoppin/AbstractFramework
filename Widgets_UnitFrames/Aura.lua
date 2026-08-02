@@ -9,14 +9,41 @@ local GetUnitAuraInstanceIDs = C_UnitAuras.GetUnitAuraInstanceIDs
 local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
 local STATUS_BAR_IMMEDIATE = Enum.StatusBarInterpolation.Immediate
 local STATUS_BAR_ELAPSED_TIME = Enum.StatusBarTimerDirection.ElapsedTime
+local DEFAULT_AURA_BLOCK_RED = 0.5
+local DEFAULT_AURA_BLOCK_GREEN = 0.5
+local DEFAULT_AURA_BLOCK_BLUE = 0.5
+local DEFAULT_AURA_BLOCK_ALPHA = 1
 
-local durationFormatter = C_StringUtil.CreateNumericRuleFormatter()
-durationFormatter:SetBreakpoints({
-    {
-        threshold = 0,
-        format = "%.1f",
-    },
-})
+-- Retail 12.1.0.68914 (wow-ui-source d3915c78) marks every general
+-- unit-aura enumeration and instance-ID API RequiresUnitAuraAccess with
+-- FailureMode=Error. This is a static client boundary, not a combat or
+-- secrecy probe: live Retail 12.1 rows must use AuraContainers, and an
+-- unavailable native backend must leave legacy widgets inert. Unknown future
+-- Retail interfaces fail closed; pre-12.1 Retail keeps its compatibility path.
+local RETAIL_12_1_INTERFACE_MIN = 120100
+local function CanEnumerateLegacyUnitAuras()
+    if not AF.isRetail then return true end
+
+    local _, _, _, interfaceVersion = GetBuildInfo()
+    interfaceVersion = tonumber(interfaceVersion)
+    return interfaceVersion ~= nil
+        and interfaceVersion < RETAIL_12_1_INTERFACE_MIN
+end
+
+local canEnumerateLegacyUnitAuras = CanEnumerateLegacyUnitAuras()
+
+-- Retail 12.0.7.68887 and 12.1.0.68914 expose this formatter to
+-- DurationTextBinding, so secret remaining-time values stay entirely native
+-- while changing units at the ordinary minute/hour/day boundaries.
+local durationFormatter = C_StringUtil.CreateSecondsFormatter()
+durationFormatter:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
+durationFormatter:SetMinInterval(Enum.SecondsFormatterInterval.Seconds)
+durationFormatter:SetMaxInterval(Enum.SecondsFormatterInterval.Days)
+durationFormatter:SetDesiredUnitCount(1)
+durationFormatter:SetCanRoundUpLastUnit(false)
+durationFormatter:SetCanRoundUpIntervals(false)
+durationFormatter:SetMillisecondsThreshold(60)
+durationFormatter:SetStripIntervalWhitespace(Enum.SecondsFormatterIntervalWhitespace.Strip)
 
 local dispelTypes = {
     {0, "None"},
@@ -52,22 +79,65 @@ local function CreateAuraDurationBar(parent, anchor)
     durationBar:SetStatusBarTexture(AF.GetPlainTexture())
     durationBar:SetStatusBarColor(0, 0, 0, 0.75)
     durationBar:Hide()
-
     return durationBar
 end
 
-local function SetupAuraCooldownStyle(icon, cooldown, durationBar, style)
-    local isVertical = style == "vertical" or style == "block_vertical"
+local function CopyAuraBlockColor(color)
+    if type(color) == "table"
+        and type(color[1]) == "number"
+        and type(color[2]) == "number"
+        and type(color[3]) == "number"
+        and type(color[4]) == "number"
+    then
+        return {color[1], color[2], color[3], color[4]}
+    end
+
+    return {
+        DEFAULT_AURA_BLOCK_RED,
+        DEFAULT_AURA_BLOCK_GREEN,
+        DEFAULT_AURA_BLOCK_BLUE,
+        DEFAULT_AURA_BLOCK_ALPHA,
+    }
+end
+
+local function CreateAuraBlockBackground(parent, anchor, blockColor)
+    local background = parent:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints(anchor)
+    background:SetColorTexture(unpack(blockColor))
+    background:Hide()
+    return background
+end
+
+local function UsesAuraDurationBar(style)
+    return style == "vertical" or style == "block_vertical"
+end
+
+local function UsesAuraDurationCooldown(style)
+    return style ~= "none" and not UsesAuraDurationBar(style)
+end
+
+local function SetupAuraCooldownStyle(
+    icon,
+    cooldown,
+    durationBar,
+    blockBackground,
+    style,
+    blockColor
+)
+    local isVertical = UsesAuraDurationBar(style)
     local isBlockVertical = style == "block_vertical"
-    cooldown:SetShown(style ~= "none" and not isVertical)
-    cooldown:SetDrawEdge(style:find("edge$") ~= nil)
-    durationBar:SetShown(isVertical)
-    durationBar:SetStatusBarColor(
-        isBlockVertical and 0.5 or 0,
-        isBlockVertical and 0.5 or 0,
-        isBlockVertical and 0.5 or 0,
-        isBlockVertical and 1 or 0.75
-    )
+    local isBlockClock = style:find("^block_clock") ~= nil
+    local isBlock = isBlockVertical or isBlockClock
+    if cooldown then
+        cooldown:SetShown(UsesAuraDurationCooldown(style))
+        cooldown:SetDrawEdge(style:find("edge$") ~= nil)
+    end
+    if durationBar then
+        durationBar:SetShown(isVertical)
+        durationBar:SetStatusBarColor(0, 0, 0, 0.75)
+    end
+    blockBackground:SetColorTexture(unpack(blockColor))
+    blockBackground:SetShown(isBlock)
     icon:SetShown(style:find("^block") == nil)
 end
 
@@ -109,12 +179,19 @@ local function SetAuraTimer(aura, duration)
             aura.icon,
             aura.cooldown,
             aura.durationBar,
-            aura.cooldownStyle
+            aura.blockBackground,
+            aura.cooldownStyle,
+            aura.blockColor
         )
     end
 end
 
 function AF_SecretAuraMixin:SetAura(unit, auraInstanceID)
+    if not canEnumerateLegacyUnitAuras then
+        self:ClearAura()
+        return
+    end
+
     self.unit = unit
     self.auraInstanceID = auraInstanceID
     self.inventorySlot = nil
@@ -214,9 +291,17 @@ function AF_SecretAuraMixin:SetVisibilityManagedExternally(managed)
     self.visibilityManagedExternally = managed
 end
 
-function AF_SecretAuraMixin:SetCooldownStyle(style)
+function AF_SecretAuraMixin:SetCooldownStyle(style, blockColor)
     self.cooldownStyle = style
-    SetupAuraCooldownStyle(self.icon, self.cooldown, self.durationBar, style)
+    self.blockColor = CopyAuraBlockColor(blockColor)
+    SetupAuraCooldownStyle(
+        self.icon,
+        self.cooldown,
+        self.durationBar,
+        self.blockBackground,
+        style,
+        self.blockColor
+    )
 end
 
 function AF_SecretAuraMixin:SetupDurationText(config)
@@ -288,6 +373,11 @@ function AF.InitAura(button, noBorder, visibilityManagedExternally)
     icon:SetAllPoints()
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
+    local blockColor = CopyAuraBlockColor()
+    local blockBackground = CreateAuraBlockBackground(button, icon, blockColor)
+    button.blockColor = blockColor
+    button.blockBackground = blockBackground
+
     local cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
     button.cooldown = cooldown
     AF.SetFrameLevel(cooldown, 1, button)
@@ -300,8 +390,9 @@ function AF.InitAura(button, noBorder, visibilityManagedExternally)
     cooldown.noCooldownCount = true
     cooldown:SetUseAuraDisplayTime(true)
 
-    -- Retail 12.0.7.68887 SimpleStatusBar:SetTimerDuration accepts the opaque
-    -- LuaDurationObject, so vertical styles do not inspect restricted time.
+    -- Retail 12.0.7.68887 and 12.1.0.68914
+    -- SimpleStatusBar:SetTimerDuration accept an opaque LuaDurationObject as a
+    -- secret argument, keeping vertical timing native.
     local durationBar = CreateAuraDurationBar(button, icon)
     button.durationBar = durationBar
 
@@ -312,8 +403,7 @@ function AF.InitAura(button, noBorder, visibilityManagedExternally)
     local dispelOverlay = overlayFrame:CreateTexture(nil, "OVERLAY")
     button.dispelOverlay = dispelOverlay
     dispelOverlay:SetAllPoints()
-    dispelOverlay:SetTexture([[Interface\Buttons\UI-Debuff-Overlays]])
-    dispelOverlay:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
+    dispelOverlay:SetTexture(AF.GetTexture("Border"))
     dispelOverlay:Hide()
 
     local durationText = overlayFrame:CreateFontString(nil, "OVERLAY", "AF_FONT_NORMAL")
@@ -327,7 +417,7 @@ function AF.InitAura(button, noBorder, visibilityManagedExternally)
     button.durationTextBinding:SetFormatter(durationFormatter)
     button.durationTextBinding:SetExpiredText("0.0")
     button.durationTextBinding:SetZeroDurationText("")
-    button.durationTextBinding:SetUpdateInterval(0)
+    button.durationTextBinding:SetUpdateInterval(0.1)
 
     button:SetFallbackIcon(134400)
     button:SetScript("OnEnter", Aura_OnEnter)
@@ -345,16 +435,215 @@ end
 ---------------------------------------------------------------------
 -- Retail 12.1 custom aura containers
 ---------------------------------------------------------------------
--- Retail 12.1.0.68824 (wow-ui-source fa38386c) replaces Retail's
--- SecureAuraHeaderTemplate with externally-instantiable AuraContainer and
--- CustomAuraButton intrinsics. The exported tables are a stable capability
--- check and avoid probing frame creation through error handling.
-AF.hasCustomAuraContainer = _G.C_AuraContainerUtil ~= nil
-    and _G.AuraContainerSortMethod ~= nil
-    and _G.CustomAuraContainerLayoutDefaults ~= nil
-    and _G.AuraContainerInbound ~= nil
+-- Retail 12.1.0.68914 (wow-ui-source d3915c78) replaces Retail's
+-- SecureAuraHeaderTemplate with externally-instantiable AuraContainers.
+-- Containers create and own their CustomAuraButtons; addons configure those
+-- buttons through initializeFrame. Its duration-text schema also accepts a
+-- native color curve plus Enum.DurationTextBindingProperty. Check the current
+-- exported schema rather than probing protected frame creation or accepting
+-- the incompatible 68824 API.
+local customAuraContainerLayoutDefaults = _G.CustomAuraContainerLayoutDefaults
+local customAuraGroupDefaults = _G.CustomAuraContainerGroupDefaultOptions
+local customAuraGroupLayoutDefaults = _G.CustomAuraContainerGroupLayoutDefaultOptions
+local customAuraSlotDefaults = _G.CustomAuraContainerSlotDefaultOptions
+local customItemEnchantmentDefaults = _G.CustomAuraContainerItemEnchantmentDefaultOptions
+local customItemEnchantmentLayoutDefaults = _G.CustomAuraContainerItemEnchantmentLayoutDefaultOptions
+local customDispelTypeTextureStyle = _G.Enum and Enum.CustomAuraButtonDispelTypeTextureStyle
+local durationTextBindingProperty = _G.Enum and Enum.DurationTextBindingProperty
+local luaCurveType = _G.Enum and Enum.LuaCurveType
 
-local function InitializeCustomAuraButton(button, style)
+AF.hasCustomAuraContainer = _G.C_AuraContainerUtil ~= nil
+    and C_AuraContainerUtil.ProcessCustomAuraButtonApplicationCountOptions ~= nil
+    and C_AuraContainerUtil.ProcessCustomAuraButtonDispelTypeTextureOptions ~= nil
+    and C_AuraContainerUtil.ProcessCustomAuraButtonDurationBarOptions ~= nil
+    and C_AuraContainerUtil.ProcessCustomAuraButtonDurationTextOptions ~= nil
+    and _G.AuraContainerSortMethod ~= nil
+    and _G.AuraContainerSortDirection ~= nil
+    and _G.AuraContainerInbound ~= nil
+    and _G.AuraContainerItemEnchantmentSlot ~= nil
+    and _G.AuraContainerItemEnchantmentSortMethod ~= nil
+    and _G.CustomAuraContainerAuraProcessingPolicy ~= nil
+    and _G.CustomAuraContainerItemEnchantmentPlacement ~= nil
+    and customAuraContainerLayoutDefaults ~= nil
+    and customAuraContainerLayoutDefaults.axis ~= nil
+    and customAuraContainerLayoutDefaults.maximumLineSize ~= nil
+    and customAuraGroupDefaults ~= nil
+    and customAuraGroupLayoutDefaults ~= nil
+    and customAuraGroupLayoutDefaults.elementSpacing ~= nil
+    and customAuraGroupLayoutDefaults.forceNewLine ~= nil
+    and customAuraSlotDefaults ~= nil
+    and customItemEnchantmentDefaults ~= nil
+    and customItemEnchantmentLayoutDefaults ~= nil
+    and _G.AnchorUtil ~= nil
+    and AnchorUtil.FlowLayoutAxis ~= nil
+    and AnchorUtil.FlowDirection ~= nil
+    and _G.C_CurveUtil ~= nil
+    and C_CurveUtil.CreateColorCurve ~= nil
+    and _G.CreateColor ~= nil
+    and luaCurveType ~= nil
+    and luaCurveType.Step ~= nil
+    and durationTextBindingProperty ~= nil
+    and durationTextBindingProperty.RemainingDuration ~= nil
+    and durationTextBindingProperty.RemainingPercent ~= nil
+    and customDispelTypeTextureStyle ~= nil
+    and customDispelTypeTextureStyle.PreserveAsset ~= nil
+
+local customAuraContainerConstructionTotals = {
+    containerCreateAttempts = 0,
+    containerAllocations = 0,
+    containerCreateCompletions = 0,
+    trackedContainers = 0,
+    externalContainersObserved = 0,
+    groupAddAttempts = 0,
+    groupsAdded = 0,
+    slotAddAttempts = 0,
+    slotsAdded = 0,
+    itemEnchantmentAddAttempts = 0,
+    itemEnchantmentsAdded = 0,
+    initialFrameReservationsAttempted = 0,
+    initialFrameReservationsCompleted = 0,
+}
+
+local customAuraContainerConstructionCounterFields = {
+    "containerCreateAttempts",
+    "containerAllocations",
+    "containerCreateCompletions",
+    "groupAddAttempts",
+    "groupsAdded",
+    "slotAddAttempts",
+    "slotsAdded",
+    "itemEnchantmentAddAttempts",
+    "itemEnchantmentsAdded",
+    "initialFrameReservationsAttempted",
+    "initialFrameReservationsCompleted",
+}
+
+-- Records must never keep a native container alive. Totals are intentionally
+-- cumulative and have no reset path so callers can compare monotonic snapshots
+-- around reload/build scenarios without changing the observed lifecycle.
+local customAuraContainerConstructionRecords = setmetatable({}, {__mode = "k"})
+
+-- Retail 12.1.0.68914 (wow-ui-source d3915c78) reserves ten frames in
+-- AddAuraGroup's initial batch and one frame for each slot/enchantment.
+-- Initializer callbacks for later lazy group batches are deliberately excluded.
+local customAuraGroupInitialFrameReservation = 10
+local customAuraSingleInitialFrameReservation = 1
+
+local function CreateCustomAuraContainerConstructionRecord(createdByAbstractFramework)
+    local record = {
+        createdByAbstractFramework = createdByAbstractFramework,
+    }
+    for _, field in ipairs(customAuraContainerConstructionCounterFields) do
+        record[field] = 0
+    end
+    return record
+end
+
+local function TrackCustomAuraContainerConstruction(container, createdByAbstractFramework)
+    local record = customAuraContainerConstructionRecords[container]
+    if record then
+        return record
+    end
+
+    record = CreateCustomAuraContainerConstructionRecord(createdByAbstractFramework)
+    customAuraContainerConstructionRecords[container] = record
+    customAuraContainerConstructionTotals.trackedContainers =
+        customAuraContainerConstructionTotals.trackedContainers + 1
+    if not createdByAbstractFramework then
+        customAuraContainerConstructionTotals.externalContainersObserved =
+            customAuraContainerConstructionTotals.externalContainersObserved + 1
+    end
+    return record
+end
+
+local function IncrementCustomAuraContainerConstruction(record, field, amount)
+    amount = amount or 1
+    customAuraContainerConstructionTotals[field] =
+        customAuraContainerConstructionTotals[field] + amount
+    record[field] = record[field] + amount
+end
+
+local function CopyCustomAuraContainerConstructionCounters(source)
+    local snapshot = {}
+    for _, field in ipairs(customAuraContainerConstructionCounterFields) do
+        snapshot[field] = source[field]
+    end
+    return snapshot
+end
+
+local function AssertCustomAuraContainer()
+    assert(AF.hasCustomAuraContainer, "12.1 CustomAuraContainerTemplate is unavailable")
+end
+
+local function CreateCustomAuraDurationTextBinding()
+    local binding = C_DurationUtil.CreateDurationTextBinding()
+    binding:SetFormatter(durationFormatter)
+    binding:SetExpiredText("0.0")
+    binding:SetZeroDurationText("")
+    binding:SetUpdateInterval(0.1)
+    return binding
+end
+
+local function IsFiniteNumber(value)
+    return type(value) == "number"
+        and value == value
+        and value ~= math.huge
+        and value ~= -math.huge
+end
+
+local function IsNormalizedColor(color)
+    if type(color) ~= "table" then return false end
+
+    for index = 1, 3 do
+        local component = color[index]
+        if not IsFiniteNumber(component) or component < 0 or component > 1 then
+            return false
+        end
+    end
+
+    local alpha = color[4]
+    return alpha == nil
+        or IsFiniteNumber(alpha) and alpha >= 0 and alpha <= 1
+end
+
+-- Retail 12.1.0.68914 DurationTextBindingSharedDocumentation exposes one
+-- sampled property for each native text-color curve. A valid descriptor colors
+-- values below the threshold and returns to the configured normal color at the
+-- threshold. Invalid descriptors deliberately keep the static normal color.
+local function CreateCustomAuraDurationTextColorOptions(config)
+    local color = type(config) == "table" and config.color
+    local threshold = type(color) == "table" and color.threshold
+    if threshold == nil then return nil end
+    if type(threshold) ~= "table"
+        or not IsNormalizedColor(color.normal)
+        or not IsNormalizedColor(threshold.rgb)
+        or not IsFiniteNumber(threshold.value)
+        or threshold.value <= 0
+    then
+        return nil
+    end
+
+    local property
+    if threshold.mode == "seconds" then
+        property = durationTextBindingProperty.RemainingDuration
+    elseif threshold.mode == "percent" and threshold.value <= 1 then
+        property = durationTextBindingProperty.RemainingPercent
+    else
+        return nil
+    end
+
+    local curve = C_CurveUtil.CreateColorCurve()
+    curve:SetType(luaCurveType.Step)
+    curve:AddPoint(0, CreateColor(AF.UnpackColor(threshold.rgb)))
+    curve:AddPoint(threshold.value, CreateColor(AF.UnpackColor(color.normal)))
+
+    return {
+        curve = curve,
+        property = property,
+    }
+end
+
+local function InitializeCustomAuraButton(button, style, anchor)
     if not style.noBorder then
         -- BackdropTemplate has an OnSizeChanged Lua layout path. Custom aura
         -- geometry may be secret, so use scriptless child textures instead.
@@ -371,6 +660,17 @@ local function InitializeCustomAuraButton(button, style)
         AF.SetSize(button, style.width, style.height)
     end
 
+    if anchor then
+        button:ClearAllPoints()
+        button:SetPoint(
+            anchor.point,
+            anchor.relativeTo,
+            anchor.relativePoint,
+            anchor.x,
+            anchor.y
+        )
+    end
+
     local icon = button:CreateTexture(nil, "ARTWORK")
     if style.iconInset then
         AF.SetInside(icon, button, style.iconInset)
@@ -382,19 +682,45 @@ local function InitializeCustomAuraButton(button, style)
         icon:SetDesaturated(style.desaturated)
     end
 
-    local cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
-    AF.SetFrameLevel(cooldown, 1, button)
-    cooldown:SetAllPoints(icon)
-    cooldown:SetDrawBling(false)
-    cooldown:SetDrawEdge(false)
-    -- AF's duration binding owns the numeric label. Keep the cooldown frame
-    -- for its sweep and edge without native or third-party countdown text.
-    cooldown:SetHideCountdownNumbers(true)
-    cooldown.noCooldownCount = true
-    cooldown:SetUseAuraDisplayTime(true)
+    -- CustomAuraButton access restrictions are installed after this
+    -- initializer and deny tainted access while aura data is secret. Keep the
+    -- static, ordinary configured color in a scriptless texture and complete
+    -- its styling before registering any aura-driven regions.
+    local blockColor = CopyAuraBlockColor(style.blockColor)
+    local blockBackground = CreateAuraBlockBackground(button, icon, blockColor)
 
-    local durationBar = CreateAuraDurationBar(button, icon)
-    SetupAuraCooldownStyle(icon, cooldown, durationBar, style.cooldownStyle or "none")
+    local cooldownStyle = style.cooldownStyle or "none"
+    local cooldown
+    if UsesAuraDurationCooldown(cooldownStyle) then
+        cooldown = CreateFrame(
+            "Cooldown",
+            nil,
+            button,
+            "CooldownFrameTemplate"
+        )
+        AF.SetFrameLevel(cooldown, 1, button)
+        cooldown:SetAllPoints(icon)
+        cooldown:SetDrawBling(false)
+        cooldown:SetDrawEdge(false)
+        -- AF's duration binding owns the numeric label. Keep the cooldown
+        -- frame for its sweep and edge without native or third-party text.
+        cooldown:SetHideCountdownNumbers(true)
+        cooldown.noCooldownCount = true
+        cooldown:SetUseAuraDisplayTime(true)
+    end
+
+    local durationBar
+    if UsesAuraDurationBar(cooldownStyle) then
+        durationBar = CreateAuraDurationBar(button, icon)
+    end
+    SetupAuraCooldownStyle(
+        icon,
+        cooldown,
+        durationBar,
+        blockBackground,
+        cooldownStyle,
+        blockColor
+    )
 
     local overlayFrame = CreateFrame("Frame", nil, button)
     AF.SetFrameLevel(overlayFrame, 2, button)
@@ -416,50 +742,89 @@ local function InitializeCustomAuraButton(button, style)
     if style.dispelColor then
         dispelOverlay = overlayFrame:CreateTexture(nil, "OVERLAY")
         dispelOverlay:SetAllPoints()
-        dispelOverlay:SetTexture([[Interface\Buttons\UI-Debuff-Overlays]])
-        dispelOverlay:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
+        -- PreserveAsset lets Blizzard apply the native dispel color without
+        -- replacing this caller-owned square border with its rounded atlas.
+        dispelOverlay:SetTexture(AF.GetTexture("Border"))
         dispelOverlay:Hide()
     end
 
-    -- Blizzard applies DenyTaintedAccessWhenAurasAreSecret immediately after
-    -- this initializer. Fully configure regions before attaching them, then
-    -- leave the live button opaque to addon code.
+    -- Blizzard installs DenyTaintedAccessWhenAurasAreSecret after this
+    -- initializer (or after the login bootstrap for early-created buttons).
+    -- Fully configure regions before attaching them, then avoid relying on
+    -- access to a live button while aura data is secret.
     button:SetIcon(icon)
-    button:SetDurationCooldown(cooldown)
-    button:SetDurationBar(durationBar, {
-        interpolation = STATUS_BAR_IMMEDIATE,
-        direction = STATUS_BAR_ELAPSED_TIME,
-    })
-    if durationText then
-        button:SetDurationText(durationText, {
-            formatter = durationFormatter,
-            expiredText = "0.0",
-            zeroDurationText = "",
-            updateInterval = 0,
+    -- Retail 12.1 updates every registered duration display. Registering both
+    -- carriers lets the native timer setter reactivate the nominally hidden
+    -- one, drawing Blizzard's clock and AF's vertical bar together. Attach
+    -- only the carrier selected by the construction-owned cooldown style.
+    if durationBar then
+        button:SetDurationBar(durationBar, {
+            interpolation = STATUS_BAR_IMMEDIATE,
+            direction = STATUS_BAR_ELAPSED_TIME,
         })
+    elseif cooldown then
+        button:SetDurationCooldown(cooldown)
+    end
+    if durationText then
+        local options = {
+            binding = CreateCustomAuraDurationTextBinding(),
+        }
+        options.textColor = CreateCustomAuraDurationTextColorOptions(
+            style.durationText
+        )
+        button:SetDurationText(durationText, options)
     end
     if stackText then
         button:SetApplicationCount(stackText)
     end
     if dispelOverlay then
-        button:SetAuraBorder(dispelOverlay, {
-            style = Enum.CustomAuraButtonBorderStyle.Color,
+        button:AddDispelTypeTexture(dispelOverlay, {
+            style = customDispelTypeTextureStyle.PreserveAsset,
             showWhenHarmful = true,
             showWhenHelpful = false,
             showWithoutDispelType = false,
             customDispelColorCurve = style.dispelColorCurve or AF.GetAuraDispelColorCurve(),
         })
     end
+    if style.tooltip then
+        button:EnableMouse(style.tooltip.enabled)
+        if style.tooltip.anchorPoint then
+            button:SetTooltipAnchorPoint(
+                style.tooltip.anchorPoint,
+                style.tooltip.offsetX,
+                style.tooltip.offsetY
+            )
+        end
+        if style.tooltip.hideInCombat ~= nil then
+            button:SetHideTooltipInCombat(style.tooltip.hideInCombat)
+        end
+    end
     if style.cancelAuraButtons then
         button:SetCancelAuraButtons(style.cancelAuraButtons)
     end
 end
 
-local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle)
-    local options = AF.Copy(buttonOptions or {})
+local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle, anchor, stripAnchor)
+    local options
+    if stripAnchor then
+        local nativeOptions = {}
+        for key, value in pairs(buttonOptions or {}) do
+            if key ~= "anchor" then
+                nativeOptions[key] = value
+            end
+        end
+        options = AF.Copy(nativeOptions)
+    else
+        options = AF.Copy(buttonOptions or {})
+    end
     local style = AF.Copy(buttonStyle or {})
     assert(options.initializeFrame == nil, "initializeFrame is managed by AbstractFramework")
     assert(options.templateNames == nil, "templateNames are managed by AbstractFramework")
+    if style.tooltip then
+        assert(type(style.tooltip.enabled) == "boolean", "tooltip.enabled must be a boolean")
+        assert(style.tooltip.enabled or not style.cancelAuraButtons,
+            "cancelAuraButtons requires mouse-enabled tooltips")
+    end
 
     if not style.noBorder then
         style.backdropBorderColor = style.backdropBorderColor or {AF.GetColorRGB("border")}
@@ -470,9 +835,51 @@ local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle)
     end
 
     options.initializeFrame = function(button)
-        InitializeCustomAuraButton(button, style)
+        InitializeCustomAuraButton(button, style, anchor)
     end
     return options
+end
+
+local function GetCustomAuraSlotAnchor(container, slotOptions)
+    local anchor = slotOptions and slotOptions.anchor
+    if anchor == nil then
+        return nil
+    end
+
+    assert(type(anchor) == "table", "anchor must be a table")
+    assert(type(anchor.point) == "string" and anchor.point ~= "",
+        "anchor.point must be a non-empty string")
+
+    local relativePoint = anchor.relativePoint
+    local relativeTo = anchor.relativeTo
+    local x = anchor.x
+    local y = anchor.y
+    if relativePoint == nil then
+        relativePoint = anchor.point
+    end
+    if relativeTo == nil then
+        relativeTo = container
+    end
+    if x == nil then
+        x = 0
+    end
+    if y == nil then
+        y = 0
+    end
+    assert(type(relativePoint) == "string" and relativePoint ~= "",
+        "anchor.relativePoint must be a non-empty string")
+    assert(type(x) == "number", "anchor.x must be a number")
+    assert(type(y) == "number", "anchor.y must be a number")
+
+    -- Keep the trusted frame reference by identity. Deep-copy only the scalar
+    -- point data, and default to a container-relative anchor for simple slots.
+    return {
+        point = anchor.point,
+        relativeTo = relativeTo,
+        relativePoint = relativePoint,
+        x = x,
+        y = y,
+    }
 end
 
 ---@return boolean
@@ -480,33 +887,230 @@ function AF.HasCustomAuraContainer()
     return AF.hasCustomAuraContainer
 end
 
----@return Frame container
-function AF.CreateCustomAuraContainer(parent, name, unit, roleset)
-    assert(AF.hasCustomAuraContainer, "CustomAuraContainerTemplate is unavailable")
+---@return table totals
+function AF.GetCustomAuraContainerConstructionTotals()
+    local snapshot =
+        CopyCustomAuraContainerConstructionCounters(customAuraContainerConstructionTotals)
+    snapshot.trackedContainers = customAuraContainerConstructionTotals.trackedContainers
+    snapshot.externalContainersObserved =
+        customAuraContainerConstructionTotals.externalContainersObserved
+    return snapshot
+end
 
-    local container = CreateFrame("AuraContainer", name, parent, "CustomAuraContainerTemplate")
-    if roleset then
-        -- SetRolesets is protected in 12.1; set it once during construction.
-        container:SetRolesets(roleset)
+---@param container Frame
+---@return table|nil stats
+function AF.GetCustomAuraContainerConstructionStats(container)
+    local record = customAuraContainerConstructionRecords[container]
+    if not record then
+        return nil
     end
-    if unit then
+
+    local snapshot = CopyCustomAuraContainerConstructionCounters(record)
+    snapshot.createdByAbstractFramework = record.createdByAbstractFramework
+    return snapshot
+end
+
+---@return Frame container
+function AF.CreateCustomAuraContainer(parent, name, unit)
+    AssertCustomAuraContainer()
+
+    customAuraContainerConstructionTotals.containerCreateAttempts =
+        customAuraContainerConstructionTotals.containerCreateAttempts + 1
+    local container = CreateFrame("AuraContainer", name, parent, "CustomAuraContainerTemplate")
+    customAuraContainerConstructionTotals.containerAllocations =
+        customAuraContainerConstructionTotals.containerAllocations + 1
+    local construction =
+        TrackCustomAuraContainerConstruction(container, true)
+    construction.containerCreateAttempts = construction.containerCreateAttempts + 1
+    construction.containerAllocations = construction.containerAllocations + 1
+
+    container:SetSize(1, 1)
+    if unit ~= nil then
         container:SetUnit(unit)
     end
+
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "containerCreateCompletions"
+    )
     return container
 end
 
+function AF.SetCustomAuraContainerFlowLayout(container, layoutOptions)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+
+    local layout = AF.Copy(customAuraContainerLayoutDefaults, layoutOptions or {})
+    container:SetFlowLayoutAxis(layout.axis)
+    container:SetFlowLayoutAnchorPoint(layout.anchorPoint)
+    container:SetFlowLayoutGrowthDirection(layout.horizontalGrowthDirection, layout.verticalGrowthDirection)
+    container:SetFlowLayoutPadding(layout.paddingLeft, layout.paddingRight, layout.paddingTop, layout.paddingBottom)
+    container:SetFlowLayoutMaximumLineSize(layout.maximumLineSize)
+end
+
+function AF.ResetCustomAuraContainerFlowLayout(container)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:ResetFlowLayoutOptions()
+end
+
+function AF.SetCustomAuraContainerUnit(container, unit)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetUnit(unit)
+end
+
+function AF.SetCustomAuraContainerEnabled(container, enabled)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetEnabled(enabled)
+end
+
+function AF.UpdateCustomAuraContainer(container)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:UpdateAllAuras()
+end
+
+function AF.SetCustomAuraContainerProcessingPolicy(container, processingPolicy, options)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetAuraProcessingPolicy(processingPolicy, options)
+end
+
 function AF.AddCustomAuraGroup(container, groupKey, filterString, groupOptions, buttonStyle)
-    assert(AF.hasCustomAuraContainer, "CustomAuraContainerTemplate is unavailable")
+    AssertCustomAuraContainer()
 
     local options = GetCustomAuraButtonOptions(groupOptions, buttonStyle)
+    local construction = TrackCustomAuraContainerConstruction(container, false)
+    IncrementCustomAuraContainerConstruction(construction, "groupAddAttempts")
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "initialFrameReservationsAttempted",
+        customAuraGroupInitialFrameReservation
+    )
     container:AddAuraGroup(groupKey, filterString, options)
+    IncrementCustomAuraContainerConstruction(construction, "groupsAdded")
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "initialFrameReservationsCompleted",
+        customAuraGroupInitialFrameReservation
+    )
+end
+
+function AF.SetCustomAuraGroupFilterString(container, groupKey, filterString)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetAuraGroupFilterString(groupKey, filterString)
+end
+
+function AF.SetCustomAuraGroupMaxFrameCount(container, groupKey, maxFrameCount)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetAuraGroupMaxFrameCount(groupKey, maxFrameCount)
+end
+
+function AF.SetCustomAuraGroupCandidateFilters(container, groupKey, candidateFilters)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetAuraGroupCandidateFilters(groupKey, candidateFilters)
+end
+
+function AF.SetCustomAuraGroupSortMethod(container, groupKey, sortMethod, sortDirection)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetAuraGroupSortMethod(groupKey, sortMethod, sortDirection)
+end
+
+function AF.SetCustomAuraGroupLayout(container, groupKey, layoutOptions)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetAuraGroupLayout(groupKey, layoutOptions)
+end
+
+function AF.AddCustomAuraSlot(container, slotKey, filterString, slotOptions, buttonStyle)
+    AssertCustomAuraContainer()
+
+    local anchor = GetCustomAuraSlotAnchor(container, slotOptions)
+    local options = GetCustomAuraButtonOptions(slotOptions, buttonStyle, anchor, true)
+    local construction = TrackCustomAuraContainerConstruction(container, false)
+    IncrementCustomAuraContainerConstruction(construction, "slotAddAttempts")
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "initialFrameReservationsAttempted",
+        customAuraSingleInitialFrameReservation
+    )
+    local button = container:AddAuraSlot(slotKey, filterString, options)
+    IncrementCustomAuraContainerConstruction(construction, "slotsAdded")
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "initialFrameReservationsCompleted",
+        customAuraSingleInitialFrameReservation
+    )
+    return button
+end
+
+function AF.SetCustomAuraSlotFilterString(container, slotKey, filterString)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetAuraSlotFilterString(slotKey, filterString)
+end
+
+function AF.SetCustomAuraSlotCandidateFilters(container, slotKey, candidateFilters)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetAuraSlotCandidateFilters(slotKey, candidateFilters)
+end
+
+function AF.SetCustomAuraSlotSortMethod(container, slotKey, sortMethod, sortDirection)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetAuraSlotSortMethod(slotKey, sortMethod, sortDirection)
 end
 
 function AF.AddCustomItemEnchantment(container, itemEnchantmentSlot, enchantmentOptions, buttonStyle)
-    assert(AF.hasCustomAuraContainer, "CustomAuraContainerTemplate is unavailable")
+    AssertCustomAuraContainer()
 
     local options = GetCustomAuraButtonOptions(enchantmentOptions, buttonStyle)
-    container:AddItemEnchantment(itemEnchantmentSlot, options)
+    local construction = TrackCustomAuraContainerConstruction(container, false)
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "itemEnchantmentAddAttempts"
+    )
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "initialFrameReservationsAttempted",
+        customAuraSingleInitialFrameReservation
+    )
+    local button = container:AddItemEnchantment(itemEnchantmentSlot, options)
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "itemEnchantmentsAdded"
+    )
+    IncrementCustomAuraContainerConstruction(
+        construction,
+        "initialFrameReservationsCompleted",
+        customAuraSingleInitialFrameReservation
+    )
+    return button
+end
+
+function AF.SetCustomItemEnchantmentSortMethod(container, sortMethod, sortDirection)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetItemEnchantmentSortMethod(sortMethod, sortDirection)
+end
+
+function AF.SetCustomItemEnchantmentLayout(container, layoutOptions)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:SetItemEnchantmentLayout(layoutOptions)
+end
+
+function AF.ResetCustomItemEnchantmentLayout(container)
+    AssertCustomAuraContainer()
+    TrackCustomAuraContainerConstruction(container, false)
+    container:ResetItemEnchantmentLayout()
 end
 
 ---@class AF_SecretAuraList:Frame
@@ -525,7 +1129,34 @@ function AF_SecretAuraListMixin:SetFilter(filter)
     self.filter = filter
 end
 
+local function AssertAuraMatchFilter(matchFilter)
+    if type(matchFilter) == "string" then
+        return
+    end
+
+    assert(type(matchFilter) == "table",
+        "aura match filter must be a string or descriptor")
+    assert(
+        type(matchFilter.filterString) == "string"
+            and matchFilter.filterString ~= "",
+        "aura match filter descriptor requires a non-empty filterString"
+    )
+    assert(matchFilter.matchWhenFilteredOut == true,
+        "aura match filter descriptor requires matchWhenFilteredOut=true")
+    for key in pairs(matchFilter) do
+        assert(
+            key == "filterString" or key == "matchWhenFilteredOut",
+            "aura match filter descriptor contains an unsupported field"
+        )
+    end
+end
+
 function AF_SecretAuraListMixin:SetMatchFilters(matchFilters)
+    assert(matchFilters == nil or type(matchFilters) == "table",
+        "aura match filters must be a table or nil")
+    for _, matchFilter in ipairs(matchFilters or {}) do
+        AssertAuraMatchFilter(matchFilter)
+    end
     self.matchFilters = matchFilters
 end
 
@@ -553,6 +1184,13 @@ function AF_SecretAuraListMixin:SetMaxCount(maxCount)
 end
 
 function AF_SecretAuraListMixin:RefreshAuras()
+    if not canEnumerateLegacyUnitAuras then
+        ClearAuraList(self)
+        ClearAuraList(self.partitionList)
+        self:OnAurasUpdated(0, 0, 0)
+        return
+    end
+
     if not self.unit or not self.filter or not self.maxCount then return end
 
     self:OnBeforeAurasRefresh()
@@ -574,7 +1212,25 @@ function AF_SecretAuraListMixin:RefreshAuras()
             -- IsAuraFilteredOutByInstanceID returns an ordinary boolean. These
             -- checks classify the ID in C without reading restricted AuraData.
             for _, matchFilter in ipairs(self.matchFilters) do
-                if not IsAuraFilteredOutByInstanceID(self.unit, auraInstanceID, matchFilter) then
+                local match
+                if type(matchFilter) == "string" then
+                    match = not IsAuraFilteredOutByInstanceID(
+                        self.unit,
+                        auraInstanceID,
+                        matchFilter
+                    )
+                else
+                    -- Retail 12.0.7.68887 generated UnitAura documentation
+                    -- exposes this secret-argument C query as an ordinary bool.
+                    -- The descriptor selects its complement without reading
+                    -- AuraData or potentially secret source fields.
+                    match = IsAuraFilteredOutByInstanceID(
+                        self.unit,
+                        auraInstanceID,
+                        matchFilter.filterString
+                    )
+                end
+                if match then
                     include = true
                     break
                 end
@@ -626,7 +1282,7 @@ end
 
 function AF_SecretAuraListMixin:RegisterUnitEvents()
     self:UnregisterAllEvents()
-    if self.unit then
+    if canEnumerateLegacyUnitAuras and self.unit then
         self:RegisterUnitEvent("UNIT_AURA", self.unit)
     end
 end

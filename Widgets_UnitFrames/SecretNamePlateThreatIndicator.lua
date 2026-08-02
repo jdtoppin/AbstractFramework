@@ -516,12 +516,12 @@ function AF_SecretNamePlateThreatIndicatorMixin:ClearVisuals()
 end
 
 function AF_SecretNamePlateThreatIndicatorMixin:IsInConfiguredScope()
-    -- Retail 12.0.7.68887 (wow-ui-source 4383ced) and 12.1.0.68824
-    -- (wow-ui-source fa38386): UnitAffectingCombat, IsInInstance, and
-    -- UnitGroupRolesAssigned have no secret-return contract. Blizzard's
+    -- UnitAffectingCombat and IsInInstance remain ordinary static gates.
+    -- PTR 7 makes UnitGroupRolesAssigned secret with unit identity, but the
+    -- group-role scan below explicitly rejects secret results. Blizzard's
     -- PlayerUtil helper adds the current specialization fallback without
-    -- consulting a threat result. These static gates therefore do not create
-    -- a second threat-classification path.
+    -- consulting a threat result, so these gates do not create a second
+    -- threat-classification path.
     if self.combatOnly and not UnitAffectingCombat("player") then
         return false
     end
