@@ -16,7 +16,20 @@ externals:
     commit: default
 
 ignore:
+  - .gitattributes
+  - .github
+  - .gitignore
+  - .kanban
+  - .lint
+  - .luacheckrc
+  - .pkgmeta
+  - .release
+  - .unused
   - .utils
+  - AGENTS.md
+  - CONTRIBUTING.md
+  - scripts
+  - tests
   - Libs/LibStub/tests
   - Libs/LibStub/LibStub.toc
   - Libs/LibDeflate/docs
