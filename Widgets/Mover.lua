@@ -12,6 +12,7 @@ local moverParent, moverDialog, alignmentGrid, positionEditorFrame
 local anchorLockedText
 local CreatePositionEditorFrame, AnchorPositionEditorFrame, UpdateAndSave, UpdatePositionEditorFrame
 local isAnchorLocked = false
+local hidingMovers = false
 local modified = {}
 
 -- Retail 12.1.0.68914 (wow-ui-source d3915c78) marks frame points,
@@ -293,6 +294,38 @@ local function CreateMoverDialog()
     end)
 end
 
+local function HideMoversImmediately()
+    if hidingMovers or not moverParent then return false end
+    hidingMovers = true
+
+    -- A mover owner may be protected. Combat shutdown must only clear the
+    -- addon-owned interaction state; never settle, restore, or save an owner.
+    for _, group in pairs(movers) do
+        for _, mover in pairs(group) do
+            mover:SetScript("OnUpdate", nil)
+            mover.isDragging = nil
+            mover.moved = nil
+            mover._movementOriginal = nil
+            mover._original = nil
+            mover:Hide()
+        end
+    end
+
+    if positionEditorFrame then
+        positionEditorFrame.owner = nil
+        positionEditorFrame:Hide()
+    end
+    if moverDialog then moverDialog:Hide() end
+    moverParent:Hide()
+
+    hidingMovers = false
+    return true
+end
+
+local function ShowCombatLockdownWarning()
+    AF.Print(_G.ERR_AFFECTING_COMBAT)
+end
+
 function AF.InitMoverParent()
     if moverParent then return end
 
@@ -305,7 +338,7 @@ function AF.InitMoverParent()
     -- hide in combat
     moverParent:RegisterEvent("PLAYER_REGEN_DISABLED")
     moverParent:SetScript("OnEvent", function()
-        AF.HideMovers()
+        HideMoversImmediately()
     end)
 
     moverParent:SetScript("OnShow", function()
@@ -886,6 +919,10 @@ function AF.CreateMover(owner, group, text, save)
 
     mover:SetScript("OnMouseDown", function(self, button)
         if button ~= "LeftButton" then return end
+        if InCombatLockdown() then
+            HideMoversImmediately()
+            return
+        end
 
         local mouseX, mouseY = GetCursorPosition()
         if not IsOrdinaryNumber(mouseX) or not IsOrdinaryNumber(mouseY) then return end
@@ -903,6 +940,11 @@ function AF.CreateMover(owner, group, text, save)
         mover._movementOriginal = {point, startX, startY}
 
         mover:SetScript("OnUpdate", function()
+            if InCombatLockdown() then
+                HideMoversImmediately()
+                return
+            end
+
             local newMouseX, newMouseY = GetCursorPosition()
             if not IsOrdinaryNumber(newMouseX)
                 or not IsOrdinaryNumber(newMouseY)
@@ -944,6 +986,11 @@ function AF.CreateMover(owner, group, text, save)
     end)
 
     mover:SetScript("OnMouseUp", function(self, button)
+        if InCombatLockdown() then
+            HideMoversImmediately()
+            return
+        end
+
         if button == "RightButton" then
             if IsShiftKeyDown() then -- hide mover
                 if positionEditorFrame and positionEditorFrame.owner == owner and positionEditorFrame:IsShown() then
@@ -966,6 +1013,10 @@ function AF.CreateMover(owner, group, text, save)
     end)
 
     mover:SetScript("OnMouseWheel", function(self, delta)
+        if InCombatLockdown() then
+            HideMoversImmediately()
+            return
+        end
         if mover.isDragging then return end
         if not IsOrdinaryNumber(delta) then return end
 
@@ -1052,7 +1103,11 @@ end
 -- toggle movers
 ---------------------------------------------------------------------
 function AF.ShowMovers(group)
-    if InCombatLockdown() then return end
+    if InCombatLockdown() then
+        HideMoversImmediately()
+        ShowCombatLockdownWarning()
+        return false
+    end
 
     for g, gt in pairs(movers) do
         local show
@@ -1076,28 +1131,23 @@ function AF.ShowMovers(group)
     moverDialog:Show()
     moverDialog.moverGroups:SetSelectedValue(group or "all")
     if positionEditorFrame then positionEditorFrame:Hide() end
+    return true
 end
 
 function AF.HideMovers()
-    if InCombatLockdown() or not moverParent then return end
-
-    for _, g in pairs(movers) do
-        for _, m in pairs(g) do
-            m:Hide()
-            m._original = nil
-        end
-    end
-    moverParent:Hide()
-    if positionEditorFrame then positionEditorFrame:Hide() end
+    return HideMoversImmediately()
 end
 
 function AF.ToggleMovers()
-    if InCombatLockdown() then return end
-    if not (moverParent and moverParent:IsShown()) then
-        AF.ShowMovers()
-    else
-        AF.HideMovers()
+    if InCombatLockdown() then
+        HideMoversImmediately()
+        ShowCombatLockdownWarning()
+        return false
     end
+    if not (moverParent and moverParent:IsShown()) then
+        return AF.ShowMovers()
+    end
+    return AF.HideMovers()
 end
 
 function AF.UndoMovers()
