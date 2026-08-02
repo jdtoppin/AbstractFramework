@@ -499,9 +499,10 @@ local function makeContainer(state)
     return container
 end
 
-local function loadAuraModule(currentSchema, forbidCreateFrame)
+local function loadAuraModule(currentSchema, forbidCreateFrame, mutateEnvironment)
     local state = {
         bindings = {},
+        colorCurves = {},
         containers = {},
         durations = {},
         durationFormatters = {},
@@ -660,10 +661,18 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
     }
     environment.C_CurveUtil = {
         CreateColorCurve = function()
-            return {
-                SetType = function() end,
-                AddPoint = function() end,
-            }
+            local curve = {calls = {}}
+            state.colorCurves[#state.colorCurves + 1] = curve
+
+            function curve:SetType(...)
+                record(self.calls, "SetType", ...)
+            end
+
+            function curve:AddPoint(...)
+                record(self.calls, "AddPoint", ...)
+            end
+
+            return curve
         end,
     }
     environment.CreateColor = function(...)
@@ -697,6 +706,10 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
         FlowDirection = {Left = -1, Right = 1, Up = 1, Down = -1},
     }
     environment.Enum = {
+        DurationTextBindingProperty = {
+            RemainingDuration = 0,
+            RemainingPercent = 1,
+        },
         LuaCurveType = {Step = 1},
         CustomAuraButtonDispelTypeTextureStyle = {PreserveAsset = 4},
         SecondsFormatterAbbreviation = {OneLetter = 1},
@@ -745,6 +758,10 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
             elementSpacingY = 0,
             forceNewRow = false,
         }
+    end
+
+    if mutateEnvironment then
+        mutateEnvironment(environment)
     end
 
     if forbidCreateFrame then
@@ -862,6 +879,29 @@ assertSnapshotEqual(
     "legacy construction totals"
 )
 
+local missingDurationColorCapabilities = {
+    function(api)
+        api.C_CurveUtil.CreateColorCurve = nil
+    end,
+    function(api)
+        api.Enum.LuaCurveType.Step = nil
+    end,
+    function(api)
+        api.Enum.DurationTextBindingProperty.RemainingDuration = nil
+    end,
+    function(api)
+        api.Enum.DurationTextBindingProperty.RemainingPercent = nil
+    end,
+}
+for index, mutateEnvironment in ipairs(missingDurationColorCapabilities) do
+    local framework = loadAuraModule(true, true, mutateEnvironment)
+    assertEqual(
+        framework.HasCustomAuraContainer(),
+        false,
+        "missing native duration-color capability " .. index
+    )
+end
+
 local AF, state, api = loadAuraModule(true, false)
 local durationFormatter = assertDurationFormatter(state, api, "current schema")
 assertEqual(AF.HasCustomAuraContainer(), true, "current schema capability")
@@ -977,7 +1017,14 @@ local buttonStyle = {
         enabled = true,
         font = {"font", 10, ""},
         position = {"CENTER"},
-        color = {normal = {1, 1, 1, 1}},
+        color = {
+            normal = {1, 1, 1, 1},
+            threshold = {
+                mode = "seconds",
+                value = 5,
+                rgb = {1, 0.25, 0.25, 0.8},
+            },
+        },
     },
     stackText = {
         enabled = true,
@@ -1099,10 +1146,46 @@ local durationArguments = firstButton.bindings.SetDurationText
 assertEqual(durationArguments.n, 2, "duration binding argument count")
 local durationOptions = durationArguments[2]
 assert(durationOptions.binding, "duration binding missing")
+assert(durationOptions.textColor, "duration text-color binding missing")
 assertEqual(durationOptions.formatter, nil, "legacy duration formatter option")
 assertEqual(durationOptions.expiredText, nil, "legacy expired-text option")
 assertEqual(durationOptions.zeroDurationText, nil, "legacy zero-duration option")
 assertEqual(durationOptions.updateInterval, nil, "legacy update-interval option")
+assertEqual(
+    durationOptions.textColor.property,
+    api.Enum.DurationTextBindingProperty.RemainingDuration,
+    "duration seconds property"
+)
+local durationColorCurve = durationOptions.textColor.curve
+assertCall(
+    durationColorCurve.calls[1],
+    "SetType",
+    api.Enum.LuaCurveType.Step
+)
+local durationThresholdPoint = durationColorCurve.calls[2]
+assertEqual(durationThresholdPoint.name, "AddPoint", "duration threshold point")
+assertEqual(durationThresholdPoint.args[1], 0, "duration threshold point position")
+assertCall({
+    name = "duration threshold color",
+    args = durationThresholdPoint.args[2],
+}, "duration threshold color", 1, 0.25, 0.25, 0.8)
+local durationNormalPoint = durationColorCurve.calls[3]
+assertEqual(durationNormalPoint.name, "AddPoint", "duration normal point")
+assertEqual(durationNormalPoint.args[1], 5, "duration normal point position")
+assertCall({
+    name = "duration normal color",
+    args = durationNormalPoint.args[2],
+}, "duration normal color", 1, 1, 1, 1)
+assertEqual(#durationColorCurve.calls, 3, "duration color-curve call count")
+local durationText = durationArguments[1]
+assertCall(
+    findCall(durationText.calls, "SetTextColor"),
+    "SetTextColor",
+    1,
+    1,
+    1,
+    1
+)
 assertEqual(firstButton.bindings.SetApplicationCount.n, 1, "application-count formatter must be absent")
 local dispelOptions = firstButton.bindings.AddDispelTypeTexture[2]
 assertEqual(dispelOptions.style, 4, "dispel texture style")
@@ -1809,5 +1892,107 @@ local combatRestoredAccess = pcall(
 )
 assertEqual(combatRestoredAccess, true,
     "combat-created aura button restored API access")
+
+local function createDurationThresholdFixture(threshold)
+    local framework, fixtureState, fixtureAPI = loadAuraModule(true, false)
+    local fixtureContainer = framework.CreateCustomAuraContainer(
+        {},
+        "AFDurationThresholdContainer"
+    )
+    framework.AddCustomAuraGroup(
+        fixtureContainer,
+        "durationThreshold",
+        "HELPFUL",
+        {maxFrameCount = 1},
+        {
+            noBorder = true,
+            width = 16,
+            height = 16,
+            cooldownStyle = "none",
+            durationText = {
+                enabled = true,
+                font = {"font", 10, ""},
+                position = {"CENTER"},
+                color = {
+                    normal = {0.8, 0.9, 1, 0.75},
+                    threshold = threshold,
+                },
+            },
+        }
+    )
+
+    return fixtureContainer.buttons[1].bindings.SetDurationText,
+        fixtureState,
+        fixtureAPI
+end
+
+local percentDurationArguments, percentState, percentAPI =
+    createDurationThresholdFixture({
+        mode = "percent",
+        value = 0.3,
+        rgb = {1, 0.5, 0, 1},
+    })
+local percentColorOptions = percentDurationArguments[2].textColor
+assert(percentColorOptions, "duration percent text-color binding missing")
+assertEqual(
+    percentColorOptions.property,
+    percentAPI.Enum.DurationTextBindingProperty.RemainingPercent,
+    "duration percent property"
+)
+assertEqual(percentColorOptions.curve, percentState.colorCurves[1],
+    "duration percent color-curve identity")
+assertCall(
+    percentColorOptions.curve.calls[1],
+    "SetType",
+    percentAPI.Enum.LuaCurveType.Step
+)
+assertEqual(percentColorOptions.curve.calls[2].args[1], 0,
+    "duration percent threshold point position")
+assertEqual(percentColorOptions.curve.calls[3].args[1], 0.3,
+    "duration percent normal point position")
+
+local staticDurationArguments, staticDurationState =
+    createDurationThresholdFixture(nil)
+assertEqual(
+    staticDurationArguments[2].textColor,
+    nil,
+    "disabled duration threshold text color"
+)
+assertEqual(
+    #staticDurationState.colorCurves,
+    0,
+    "disabled duration threshold curve allocation"
+)
+
+local malformedThresholds = {
+    "invalid",
+    {mode = "minutes", value = 5, rgb = {1, 0, 0, 1}},
+    {mode = "seconds", value = 0, rgb = {1, 0, 0, 1}},
+    {mode = "seconds", value = math.huge, rgb = {1, 0, 0, 1}},
+    {mode = "percent", value = 1.01, rgb = {1, 0, 0, 1}},
+    {mode = "percent", value = 0.5, rgb = {1, "red", 0, 1}},
+    {mode = "percent", value = 0.5, rgb = {1, 0, 0, -0.1}},
+}
+for index, threshold in ipairs(malformedThresholds) do
+    local arguments, fixtureState = createDurationThresholdFixture(threshold)
+    assertEqual(
+        arguments[2].textColor,
+        nil,
+        "malformed duration threshold text color " .. index
+    )
+    assertEqual(
+        #fixtureState.colorCurves,
+        0,
+        "malformed duration threshold curve allocation " .. index
+    )
+    assertCall(
+        findCall(arguments[1].calls, "SetTextColor"),
+        "SetTextColor",
+        0.8,
+        0.9,
+        1,
+        0.75
+    )
+end
 
 print("aura_container_12_1_test: OK")
