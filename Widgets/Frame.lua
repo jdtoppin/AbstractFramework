@@ -269,6 +269,42 @@ function AF.CreateBorderedFrame(parent, name, width, height, color, borderColor)
 end
 
 ---------------------------------------------------------------------
+-- lightweight bordered frame
+---------------------------------------------------------------------
+---@class AF_LightweightBorderedFrame:AF_BorderedFrame
+local AF_LightweightBorderedFrameMixin = {}
+
+function AF_LightweightBorderedFrameMixin:UpdatePixels()
+    AF.DefaultUpdatePixels(self)
+    AF.UpdateLightweightBackdropPixels(self)
+end
+
+---@param parent Frame
+---@param name? string
+---@param width? number
+---@param height? number
+---@param color? string|table color name / table
+---@param borderColor? string|table color name / table
+---@param borderSize? number defaults to one pixel
+---@return AF_LightweightBorderedFrame lightweightBorderedFrame
+function AF.CreateLightweightBorderedFrame(parent, name, width, height, color, borderColor, borderSize)
+    local f = CreateFrame("Frame", name, parent)
+    AF.SetSize(f, width, height)
+
+    f.accentColor = AF.GetAddonAccentColorName()
+
+    Mixin(f, AF_FrameMixin)
+    Mixin(f, AF_BorderedFrameMixin)
+    Mixin(f, AF_LightweightBorderedFrameMixin)
+    Mixin(f, AF_BaseWidgetMixin)
+
+    AF.ApplyLightweightBackdropWithColors(f, color, borderColor, borderSize)
+    AF.AddToPixelUpdater_OnShow(f)
+
+    return f
+end
+
+---------------------------------------------------------------------
 -- titled pane
 ---------------------------------------------------------------------
 ---@class AF_TitledPane:Frame,AF_BaseWidgetMixin

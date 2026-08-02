@@ -50,6 +50,18 @@ if (!CHECK_ONLY) {
 }
 
 const ICONS = {
+    Bag_All: "apps",
+    Bag_Backpack: "backpack",
+    Bag_Categories: "category-2",
+    Bag_Consumables: "bottle",
+    Bag_Empty: "box-off",
+    Bag_Equipment: "hanger",
+    Bag_IndividualBags: "briefcase",
+    Bag_Misc: "package",
+    Bag_Quest: "script",
+    Bag_Reagent: "flask",
+    Bag_Recipes: "book-2",
+    Bag_TradeGoods: "tools",
     Housing_Accents: "pillow",
     Housing_All: "apps",
     Housing_Beds: "bed",
