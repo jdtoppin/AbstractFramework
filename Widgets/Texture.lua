@@ -237,6 +237,25 @@ function AF.CalcTexCoordPreCrop(crop, targetAspectRatio, originalAspectRatio, an
     end
 end
 
+---------------------------------------------------------------------
+-- aura icon texcoord
+---------------------------------------------------------------------
+---@param aura table frame with an `icon` Texture
+---@param width number
+---@param height number
+function AF.ReCalcTexCoordForAura(aura, width, height)
+    if type(width) ~= "number" or type(height) ~= "number" or width <= 0 or height <= 0 then
+        return
+    end
+
+    local icon = aura and aura.icon
+    if not icon or type(icon.SetTexCoord) ~= "function" then
+        return
+    end
+
+    icon:SetTexCoord(AF.Unpack8(AF.CalcTexCoordPreCrop(0.12, width / height)))
+end
+
 ---ccalculates scaling factor to fit a texture to target size while preserving aspect ratio
 ---@param originalWidth number
 ---@param originalHeight number

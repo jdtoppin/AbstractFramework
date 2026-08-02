@@ -3,16 +3,6 @@ local AF = select(2, ...)
 local LCG = AF.Libs.LCG
 
 ---------------------------------------------------------------------
--- recalc texcoords
----------------------------------------------------------------------
----@param aura AF_AuraButton
----@param width number
----@param height number
-function AF.ReCalcTexCoordForAura(aura, width, height)
-    aura.icon:SetTexCoord(AF.Unpack8(AF.CalcTexCoordPreCrop(0.12, width / height)))
-end
-
----------------------------------------------------------------------
 -- SetCooldown
 ---------------------------------------------------------------------
 local GetTime = GetTime
