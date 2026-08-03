@@ -44,6 +44,11 @@ assertEqual(
     "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Backpack.tga",
     "12.1 bag Texture raster path"
 )
+assertEqual(
+    AF.GetAdaptiveIcon("Bag_Housing"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Housing.tga",
+    "12.1 Housing bag Texture raster path"
+)
 
 local loadedPath
 local texture = {
@@ -108,6 +113,11 @@ assertEqual(
     rasterAF.GetAdaptiveIcon("Bag_Backpack"),
     "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Backpack.tga",
     "12.0 bag Texture raster path"
+)
+assertEqual(
+    rasterAF.GetAdaptiveIcon("Bag_Housing"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Housing.tga",
+    "12.0 Housing bag Texture raster path"
 )
 
 print("adaptive icon tests passed")

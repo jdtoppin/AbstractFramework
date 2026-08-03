@@ -56,6 +56,7 @@ const ICONS = {
     Bag_Consumables: "bottle",
     Bag_Empty: "box-off",
     Bag_Equipment: "hanger",
+    Bag_Housing: "home-2",
     Bag_IndividualBags: "briefcase",
     Bag_Misc: "package",
     Bag_Quest: "script",
