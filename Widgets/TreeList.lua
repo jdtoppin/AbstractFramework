@@ -20,6 +20,8 @@ local DEFAULT_CONTENT_GAP = 8
 local ROW_SPACING = 2
 local HEADING_TOP_GAP = 4
 local TOGGLE_SIZE = 18
+local COMPACT_ICON_INSET = 4
+local COMPACT_TOGGLE_INSET = 2
 local ROW_ICON_ALPHA = 0.9
 local INDENT_PER_DEPTH = 22
 local SCROLLBAR_WIDTH = 10
@@ -606,8 +608,17 @@ local function ApplyEntry(list, row, entry)
     row.label:SetFontObject("AF_FONT_NORMAL")
     row.label:SetShown(not compact)
 
-    local leftInset = compact and ((list.compactIconAreaWidth - list.iconSize) / 2)
-        or 8 + ((entry.depth or 0) * INDENT_PER_DEPTH)
+    -- compact parent rows (hasChildren) keep the chevron beside the icon:
+    -- icon left-inset ~4px, chevron right-inset ~2px, the pair fitting
+    -- exactly inside collapsedWidth (4 + 16 icon + 18 chevron + 2 = 40).
+    -- compact leaf rows stay icon-only, centered in the full compact area.
+    local leftInset
+    if compact then
+        leftInset = entry.hasChildren and COMPACT_ICON_INSET
+            or ((list.compactIconAreaWidth - list.iconSize) / 2)
+    else
+        leftInset = 8 + ((entry.depth or 0) * INDENT_PER_DEPTH)
+    end
     local icon = entry.icon or compact and list.fallbackIcon
     if icon then
         row.icon:ClearAllPoints()
@@ -621,15 +632,29 @@ local function ApplyEntry(list, row, entry)
         row.label:SetPoint("LEFT", leftInset, 0)
     end
 
-    if entry.hasChildren and not compact then
+    if entry.hasChildren then
         row.toggle.icon:SetTexture(AF.GetIcon(
             list.expandedById[entry.id] and "ArrowDown1" or "ArrowRight1"
         ))
+        row.toggle:ClearAllPoints()
+        if compact then
+            -- anchored from the row's LEFT (which coincides with the
+            -- viewport's left edge in both presentations) so it lands
+            -- inside the visible collapsedWidth strip rather than off
+            -- past the row's full (always-expandedWidth) frame
+            row.toggle:SetPoint("LEFT", list.collapsedWidth - TOGGLE_SIZE - COMPACT_TOGGLE_INSET, 0)
+        else
+            row.toggle:SetPoint("RIGHT", -(SCROLLBAR_WIDTH + 2), 0)
+        end
         row.toggle:Show()
-        row.label:SetPoint("RIGHT", row.toggle, "LEFT", -3, 0)
+        if not compact then
+            row.label:SetPoint("RIGHT", row.toggle, "LEFT", -3, 0)
+        end
     else
         row.toggle:Hide()
-        row.label:SetPoint("RIGHT", -ROW_RIGHT_INSET, 0)
+        if not compact then
+            row.label:SetPoint("RIGHT", -ROW_RIGHT_INSET, 0)
+        end
     end
 end
 

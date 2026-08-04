@@ -539,6 +539,64 @@ do
 end
 
 ---------------------------------------------------------------------
+-- compact-mode chevrons: parent rows keep a clickable chevron beside the
+-- icon; leaf rows stay icon-only; expanded-mode positioning is unchanged
+---------------------------------------------------------------------
+do
+    local parent = CreateFrame("Frame", "Parent")
+    local list = AF.CreateTreeList(parent, {fallbackIcon = "Bag_Misc"})
+    list.scrollFrame:SetHeight(300)
+    list.scrollBar.frame:SetHeight(300)
+    list:SetModel(BuildModel())
+    list:SetSelection("all")
+
+    -- expanded mode: chevron anchored from the row's RIGHT edge (unchanged)
+    local equipmentRow = findActiveRow(list, "equipment")
+    assertEqual(equipmentRow.toggle.shown, true, "expanded parent chevron shown")
+    local expandedTogglePoint = equipmentRow.toggle.points[#equipmentRow.toggle.points]
+    assertEqual(expandedTogglePoint[1], "RIGHT", "expanded chevron anchored from row RIGHT")
+    assertEqual(expandedTogglePoint[2], -12, "expanded chevron inset unchanged (SCROLLBAR_WIDTH+2)")
+
+    list:SetCompact(true)
+
+    -- leaf row ("all", no children): chevron stays hidden in compact mode
+    local allRow = findActiveRow(list, "all")
+    assertEqual(allRow.toggle.shown, false, "compact leaf chevron hidden")
+
+    -- parent row ("equipment", collapsed, has children): chevron shown and
+    -- positioned beside the icon, both fitting inside collapsedWidth (40)
+    equipmentRow = findActiveRow(list, "equipment")
+    assertEqual(equipmentRow.toggle.shown, true, "compact parent chevron shown")
+    assertEqual(equipmentRow.toggle.mouseEnabled, true, "compact parent chevron clickable")
+
+    local iconPoint = equipmentRow.icon.points[#equipmentRow.icon.points]
+    assertEqual(iconPoint[2], 4, "compact parent icon left-inset ~4px")
+    local togglePoint = equipmentRow.toggle.points[#equipmentRow.toggle.points]
+    assertEqual(togglePoint[1], "LEFT", "compact parent chevron anchored from row LEFT")
+    assertEqual(togglePoint[2], 20, "compact parent chevron sits within collapsedWidth (40 - 18 - 2)")
+
+    -- clicking the chevron toggles expansion without touching selection
+    assertEqual(list.expandedById.equipment, false, "starts collapsed")
+    assertEqual(list.selectionId, "all", "selection before chevron click")
+    equipmentRow.toggle.scripts.OnClick(equipmentRow.toggle)
+    assertEqual(list.expandedById.equipment, true, "chevron click expands")
+    assertEqual(list.selectionId, "all", "chevron click does not change selection")
+    assertEqual(visibleIds(list), "heading,all,equipment,weapons,armor,consumables,potions", "children visible after chevron expand")
+
+    equipmentRow = findActiveRow(list, "equipment")
+    equipmentRow.toggle.scripts.OnClick(equipmentRow.toggle)
+    assertEqual(list.expandedById.equipment, false, "chevron click collapses again")
+    assertEqual(list.selectionId, "all", "selection still unchanged after collapse")
+
+    -- returning to expanded mode restores the right-anchored chevron
+    list:SetCompact(false)
+    equipmentRow = findActiveRow(list, "equipment")
+    local restoredTogglePoint = equipmentRow.toggle.points[#equipmentRow.toggle.points]
+    assertEqual(restoredTogglePoint[1], "RIGHT", "chevron re-anchored from row RIGHT after leaving compact")
+    assertEqual(restoredTogglePoint[2], -12, "chevron inset restored after leaving compact")
+end
+
+---------------------------------------------------------------------
 -- transient scroll bar
 ---------------------------------------------------------------------
 do
