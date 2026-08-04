@@ -49,6 +49,21 @@ assertEqual(
     "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Housing.tga",
     "12.1 Housing bag Texture raster path"
 )
+assertEqual(
+    AF.GetAdaptiveIcon("Bag_Potions"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Potions.tga",
+    "12.1 consumable subclass Texture raster path"
+)
+assertEqual(
+    AF.GetAdaptiveIcon("Bag_Food"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Food.tga",
+    "12.1 consumable subclass Texture raster path"
+)
+assertEqual(
+    AF.GetAdaptiveIcon("Bag_Slot_Head"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Slot_Head.tga",
+    "12.1 equipment slot Texture raster path"
+)
 
 local loadedPath
 local texture = {
@@ -118,6 +133,21 @@ assertEqual(
     rasterAF.GetAdaptiveIcon("Bag_Housing"),
     "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Housing.tga",
     "12.0 Housing bag Texture raster path"
+)
+assertEqual(
+    rasterAF.GetAdaptiveIcon("Bag_Potions"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Potions.tga",
+    "12.0 consumable subclass Texture raster path"
+)
+assertEqual(
+    rasterAF.GetAdaptiveIcon("Bag_Food"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Food.tga",
+    "12.0 consumable subclass Texture raster path"
+)
+assertEqual(
+    rasterAF.GetAdaptiveIcon("Bag_Slot_Head"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Slot_Head.tga",
+    "12.0 equipment slot Texture raster path"
 )
 
 print("adaptive icon tests passed")
