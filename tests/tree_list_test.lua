@@ -13,6 +13,12 @@ local function assertTrue(value, message)
     end
 end
 
+local function assertNotContains(source, needle, message)
+    if source:find(needle, 1, true) then
+        error(("%s: unexpected occurrence of %q"):format(message, needle), 2)
+    end
+end
+
 ---------------------------------------------------------------------
 -- C_Timer stub with a drain() helper
 ---------------------------------------------------------------------
@@ -425,6 +431,67 @@ do
 end
 
 ---------------------------------------------------------------------
+-- manual collapse: SetCollapsed / GetCollapsed / ToggleCollapsed
+---------------------------------------------------------------------
+do
+    local parent = CreateFrame("Frame", "Parent")
+    local rail = AF.CreateSidebarRail(parent, {fallbackIcon = "Bag_Misc"})
+    local list = rail.treeList
+    list.scrollFrame:SetHeight(300)
+    list.scrollBar.frame:SetHeight(300)
+    list:SetModel(BuildModel())
+
+    assertEqual(rail:GetCollapsed(), false, "starts expanded")
+    assertEqual(rail.width, 170, "starts at expanded width")
+
+    local changedCalls = {}
+    assertEqual(rail:SetOnCollapsedChanged(function(collapsed)
+        changedCalls[#changedCalls + 1] = collapsed
+    end), true, "callback registered")
+
+    -- (a) collapse fires once, instantly (no animation ticker involved)
+    assertEqual(rail:SetCollapsed(true), true, "collapse accepted, state changed")
+    assertEqual(rail:GetCollapsed(), true, "GetCollapsed reports collapsed")
+    assertEqual(rail.width, 40, "rail width is collapsedWidth")
+    assertEqual(list:IsCompact(), true, "tree list compact while collapsed")
+    assertEqual(#changedCalls, 1, "callback fired once")
+    assertEqual(changedCalls[1], true, "callback fired with true")
+
+    -- (b) redundant collapse is a no-op: false return, no second callback
+    assertEqual(rail:SetCollapsed(true), false, "no state change reported")
+    assertEqual(#changedCalls, 1, "callback not fired again")
+
+    -- (c) silent expand: no onCollapsedChanged, but presentation-width still
+    -- fires with (expandedWidth, expandedWidth) -- both always the current width
+    local presentationCalls = {}
+    rail:SetOnPresentationWidthChanged(function(width, reservedWidth)
+        presentationCalls[#presentationCalls + 1] = {width = width, reservedWidth = reservedWidth}
+    end)
+    -- registering the callback invokes it immediately; drop that call
+    presentationCalls = {}
+
+    assertEqual(rail:SetCollapsed(false, true), true, "silent expand accepted")
+    assertEqual(rail:GetCollapsed(), false, "GetCollapsed reports expanded")
+    assertEqual(rail.width, 170, "rail width is expandedWidth")
+    assertEqual(list:IsCompact(), false, "tree list expanded")
+    assertEqual(#changedCalls, 1, "silent expand does not fire onCollapsedChanged")
+    assertEqual(#presentationCalls, 1, "presentation-width callback still fires")
+    assertEqual(presentationCalls[1].width, 170, "presentation width is expandedWidth")
+    assertEqual(presentationCalls[1].reservedWidth, 170, "reserved width equals current width")
+
+    -- (d) ToggleCollapsed flips state, returns the new state, and always fires
+    assertEqual(rail:ToggleCollapsed(), true, "toggle collapses")
+    assertEqual(rail:GetCollapsed(), true, "GetCollapsed matches toggle result")
+    assertEqual(#changedCalls, 2, "toggle fires callback")
+    assertEqual(changedCalls[2], true, "toggle callback reports collapsed")
+
+    assertEqual(rail:ToggleCollapsed(), false, "toggle expands")
+    assertEqual(rail:GetCollapsed(), false, "GetCollapsed matches toggle result")
+    assertEqual(#changedCalls, 3, "toggle fires callback again")
+    assertEqual(changedCalls[3], false, "toggle callback reports expanded")
+end
+
+---------------------------------------------------------------------
 -- the persistence cycle: expand nest -> rail collapse -> re-expand
 ---------------------------------------------------------------------
 do
@@ -436,32 +503,22 @@ do
     list:SetModel(BuildModel())
     list:SetExpanded("consumables", false)
 
-    assertEqual(rail:SetAutoHide(true), true, "auto-hide enabled")
-    assertEqual(list:IsCompact(), true, "compact while auto-hidden and unhovered")
-    assertEqual(rail:GetDesiredWidth(), 40, "reserved width is collapsed width")
-    assertEqual(rail.width, 40, "rail collapsed")
-
-    -- hover expand
-    rail.mouseOver = true
-    rail.scripts.OnEnter(rail)
-    assertEqual(list:IsCompact(), false, "hover expands presentation")
-    assertEqual(rail.width, 170, "rail expanded")
+    assertEqual(rail:GetCollapsed(), false, "starts expanded")
+    assertEqual(list:IsCompact(), false, "starts uncompact")
 
     -- expand a nest with a plain chevron toggle (no forced-expand special case:
     -- a second toggle right away must collapse, i.e. plain negation)
     assertEqual(list:ToggleExpanded("equipment"), true, "toggle expands")
     assertEqual(list.expandedById.equipment, true, "nest expanded")
     assertEqual(list:ToggleExpanded("equipment"), true, "toggle collapses (plain negation)")
-    assertEqual(list.expandedById.equipment, false, "no forced-expand special case while auto-hidden")
+    assertEqual(list.expandedById.equipment, false, "no forced-expand special case")
     list:ToggleExpanded("equipment")
     assertEqual(visibleIds(list), "heading,all,equipment,weapons,armor,consumables", "children visible after expand")
 
-    -- rail collapse (hover leave) must not modify expandedById
-    rail.mouseOver = false
-    rail.scripts.OnLeave(rail)
-    drain()
-    assertEqual(rail.width, 40, "rail collapsed after leave")
-    assertEqual(list:IsCompact(), true, "compact after leave")
+    -- rail collapse must not modify expandedById
+    assertEqual(rail:SetCollapsed(true), true, "rail collapsed")
+    assertEqual(rail.width, 40, "rail width is collapsedWidth")
+    assertEqual(list:IsCompact(), true, "compact after collapse")
     assertEqual(list.expandedById.equipment, true, "expandedById untouched by rail collapse")
     assertEqual(visibleIds(list), "heading,all,equipment,weapons,armor,consumables", "compact rail renders expanded children")
 
@@ -473,9 +530,9 @@ do
     assertEqual(list.activeRows[1].label.shown, false, "compact heading label hidden")
 
     -- re-expanding restores previously expanded nests
-    rail.mouseOver = true
-    rail.scripts.OnEnter(rail)
-    assertEqual(list:IsCompact(), false, "re-hover expands presentation")
+    assertEqual(rail:SetCollapsed(false), true, "rail expanded")
+    assertEqual(rail.width, 170, "rail width is expandedWidth")
+    assertEqual(list:IsCompact(), false, "expanded presentation")
     assertEqual(list.expandedById.equipment, true, "expansion restored, not recomputed")
     assertEqual(visibleIds(list), "heading,all,equipment,weapons,armor,consumables", "children visible again")
     assertEqual(findActiveRow(list, "weapons").label.shown, true, "expanded row label shown")
@@ -590,6 +647,36 @@ do
     local source = file:read("*a")
     file:close()
     assertEqual(source:find('SetScript("OnUpdate"', 1, true), nil, "no OnUpdate handlers")
+end
+
+---------------------------------------------------------------------
+-- rail hover auto-hide machinery is fully removed (manual collapse only)
+---------------------------------------------------------------------
+do
+    local file = assert(io.open("Widgets/TreeList.lua", "r"))
+    local source = file:read("*a")
+    file:close()
+
+    assertNotContains(source, "leaveGeneration", "leave-generation debouncing removed")
+    assertNotContains(source, "hoverExpand", "hoverExpanded presentation state removed")
+    assertNotContains(source, "RailPointerEnter", "rail pointer-enter wiring removed")
+    assertNotContains(source, "RailPointerLeave", "rail pointer-leave wiring removed")
+    assertNotContains(source, "ExpandRail", "ExpandRail helper removed")
+    assertNotContains(source, "CollapseRail", "CollapseRail helper removed")
+    assertNotContains(source, "AutoHide", "SetAutoHide/GetAutoHide/ToggleAutoHide/SetOnAutoHideChanged removed")
+
+    -- the rail's own two AnimatedResize calls (hover expand/collapse width
+    -- tweens) are gone; the tree list's own content-height animation and the
+    -- row-collapse highlight animation are untouched, so exactly two
+    -- AF.AnimatedResize call sites remain in the file
+    local count, start = 0, 1
+    while true do
+        local from = source:find("AF.AnimatedResize(", start, true)
+        if not from then break end
+        count = count + 1
+        start = from + 1
+    end
+    assertEqual(count, 2, "only the tree list's own AnimatedResize call sites remain")
 end
 
 print("tree list tests passed")

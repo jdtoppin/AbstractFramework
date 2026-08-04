@@ -1105,13 +1105,15 @@ end
 ---------------------------------------------------------------------
 -- sidebar rail
 ---------------------------------------------------------------------
+-- Manual collapse only: the rail has exactly two presentation states,
+-- expanded and collapsed, switched instantly by SetCollapsed/ToggleCollapsed
+-- (no hover auto-hide, no width animation, no pointer-enter/leave wiring).
+-- Collapsing is presentation-only -- expandedById is never written here, so
+-- nests expanded before a collapse are still expanded after re-expanding
+-- (see the tree list's expansion-persistence contract).
 ---@class AF_SidebarRail:AF_Frame
 ---@field treeList AF_TreeList embedded tree list (model/selection/expansion API)
 local AF_SidebarRailMixin = {}
-
-local function RailIsCompact(rail)
-    return rail.autoHide and not rail.hoverExpanded
-end
 
 local function PublishPresentationWidth(rail, width)
     rail.presentationWidth = width
@@ -1125,94 +1127,12 @@ local function SetRailWidth(rail, width)
     PublishPresentationWidth(rail, width)
 end
 
-local function ExpandRail(rail)
-    rail.leaveGeneration = rail.leaveGeneration + 1
-    if not rail.shown or not rail.autoHide then return end
-    StopResize(rail)
-
-    if not rail.hoverExpanded then
-        -- presentation flip only: the tree keeps its expansion state and its
-        -- single scroll offset (see the expansion-persistence contract)
-        rail.hoverExpanded = true
-        rail.treeList:SetCompact(false)
-    end
-    if rail.presentationWidth >= rail.expandedWidth then return end
-
-    AF.AnimatedResize(
-        rail,
-        rail.expandedWidth,
-        nil,
-        nil,
-        nil,
-        nil,
-        function()
-            SetRailWidth(rail, rail.expandedWidth)
-        end,
-        function(width)
-            PublishPresentationWidth(rail, width)
-        end
-    )
-end
-
-local function CollapseRail(rail)
-    if not rail.shown or not rail.autoHide or not rail.hoverExpanded then return end
-    if rail.treeList.scrollBar:IsDragging() or rail:IsMouseOver() then return end
-
-    rail.treeList:FinishModelAnimation()
-    AF.AnimatedResize(
-        rail,
-        rail.collapsedWidth,
-        nil,
-        nil,
-        nil,
-        nil,
-        function()
-            if rail.treeList.scrollBar:IsDragging() or rail:IsMouseOver() then
-                ExpandRail(rail)
-                return
-            end
-            if not rail.autoHide then return end
-            SetRailWidth(rail, rail.collapsedWidth)
-            -- collapse is presentation-only: expandedById is never written
-            -- here, so previously expanded nests return on re-expand
-            rail.hoverExpanded = false
-            rail.treeList:SetCompact(true)
-        end,
-        function(width)
-            PublishPresentationWidth(rail, width)
-        end
-    )
-end
-
-local function RailPointerEnter(rail)
-    rail.leaveGeneration = rail.leaveGeneration + 1
-    rail.treeList.scrollBar:Reveal()
-    ExpandRail(rail)
-end
-
-local function RailPointerLeave(rail)
-    rail.leaveGeneration = rail.leaveGeneration + 1
-    local generation = rail.leaveGeneration
-    rail.treeList.scrollBar:ScheduleFadeOut()
-    -- debounce: enter/leave pairs fired while crossing child frames land in
-    -- the same frame; only collapse if no re-enter bumped the generation
-    C_Timer.After(0, function()
-        if generation ~= rail.leaveGeneration then return end
-        CollapseRail(rail)
-    end)
-end
-
 local function ApplyDesiredState(rail)
-    rail.treeList:FinishModelAnimation()
-    StopResize(rail)
+    SetRailWidth(rail, rail.collapsed and rail.collapsedWidth or rail.expandedWidth)
+    rail.treeList:SetCompact(rail.collapsed)
     if rail.shown then
-        rail.hoverExpanded = not rail.autoHide or rail:IsMouseOver()
-        SetRailWidth(rail, RailIsCompact(rail) and rail.collapsedWidth or rail.expandedWidth)
         rail:Show()
-        rail.treeList:SetCompact(RailIsCompact(rail))
     else
-        rail.hoverExpanded = false
-        SetRailWidth(rail, rail.autoHide and rail.collapsedWidth or rail.expandedWidth)
         rail:Hide()
     end
 end
@@ -1227,43 +1147,38 @@ function AF_SidebarRailMixin:SetShown(shown)
     return true
 end
 
----@param autoHide boolean
----@return boolean accepted
-function AF_SidebarRailMixin:SetAutoHide(autoHide)
-    if type(autoHide) ~= "boolean" then return false end
-    if self.autoHide == autoHide then return true end
+---@param collapsed boolean
+---@param silent? boolean suppress onCollapsedChanged (presentation-width callback still fires)
+---@return boolean changed true if the collapsed state actually changed
+function AF_SidebarRailMixin:SetCollapsed(collapsed, silent)
+    if type(collapsed) ~= "boolean" then return false end
+    if self.collapsed == collapsed then return false end
 
-    self.autoHide = autoHide
-    self.treeList:FinishModelAnimation()
-    StopResize(self)
-    -- no scroll-offset copying: compact and expanded presentations share one
-    -- offset (see the tree list's expansion-persistence contract)
-    self.hoverExpanded = not autoHide or self:IsMouseOver()
-    SetRailWidth(self, RailIsCompact(self) and self.collapsedWidth or self.expandedWidth)
-    self.treeList:SetCompact(RailIsCompact(self))
+    self.collapsed = collapsed
+    ApplyDesiredState(self)
+    if not silent and self.onCollapsedChanged then
+        self.onCollapsedChanged(collapsed)
+    end
     return true
 end
 
----@return boolean autoHideEnabled
-function AF_SidebarRailMixin:GetAutoHide()
-    return self.autoHide
+---@return boolean collapsed
+function AF_SidebarRailMixin:GetCollapsed()
+    return self.collapsed
 end
 
----@return boolean enabled
-function AF_SidebarRailMixin:ToggleAutoHide()
-    local enabled = not self.autoHide
-    self:SetAutoHide(enabled)
-    if self.onAutoHideChanged then
-        self.onAutoHideChanged(enabled)
-    end
-    return enabled
+---@return boolean collapsed the new state
+function AF_SidebarRailMixin:ToggleCollapsed()
+    local collapsed = not self.collapsed
+    self:SetCollapsed(collapsed)
+    return collapsed
 end
 
----@param callback? fun(enabled:boolean)
+---@param callback? fun(collapsed:boolean)
 ---@return boolean accepted
-function AF_SidebarRailMixin:SetOnAutoHideChanged(callback)
+function AF_SidebarRailMixin:SetOnCollapsedChanged(callback)
     if callback ~= nil and type(callback) ~= "function" then return false end
-    self.onAutoHideChanged = callback
+    self.onCollapsedChanged = callback
     return true
 end
 
@@ -1278,9 +1193,9 @@ function AF_SidebarRailMixin:SetOnPresentationWidthChanged(callback)
     return true
 end
 
----@return number width reserved width for the current auto-hide mode
+---@return number width reserved width for the current collapse state
 function AF_SidebarRailMixin:GetDesiredWidth()
-    return self.autoHide and self.collapsedWidth or self.expandedWidth
+    return self.collapsed and self.collapsedWidth or self.expandedWidth
 end
 
 ---@param gap? number gap between the rail and adjacent content (default 8)
@@ -1291,7 +1206,7 @@ end
 
 ---@param parent Frame
 ---@param options? table all AF.CreateTreeList options, plus:
---- - collapsedWidth number rail width while auto-hidden (default 40)
+--- - collapsedWidth number rail width while collapsed (default 40)
 ---@return AF_SidebarRail rail
 function AF.CreateSidebarRail(parent, options)
     options = options or {}
@@ -1304,9 +1219,7 @@ function AF.CreateSidebarRail(parent, options)
     rail.expandedWidth = options.expandedWidth or DEFAULT_EXPANDED_WIDTH
     rail.collapsedWidth = options.collapsedWidth or DEFAULT_COLLAPSED_WIDTH
     rail.shown = true
-    rail.autoHide = false
-    rail.hoverExpanded = false
-    rail.leaveGeneration = 0
+    rail.collapsed = false
     rail.presentationWidth = rail.expandedWidth
 
     local background = rail:CreateTexture(nil, "BACKGROUND")
@@ -1318,19 +1231,6 @@ function AF.CreateSidebarRail(parent, options)
     rail.treeList = treeList
     treeList:SetPoint("TOPLEFT")
     treeList:SetPoint("BOTTOMRIGHT")
-    treeList:SetOnPointerEnter(function()
-        RailPointerEnter(rail)
-    end)
-    treeList:SetOnPointerLeave(function()
-        RailPointerLeave(rail)
-    end)
-
-    rail:SetScript("OnEnter", function()
-        RailPointerEnter(rail)
-    end)
-    rail:SetScript("OnLeave", function()
-        RailPointerLeave(rail)
-    end)
 
     ApplyDesiredState(rail)
     return rail
