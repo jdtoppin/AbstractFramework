@@ -96,6 +96,7 @@ Widgets\Tooltip.lua
 Widgets\Mover.lua
 Widgets\FontString.lua
 Widgets\Button.lua
+Widgets\TreeList.lua
 Widgets\EditBox.lua
 Widgets\Slider.lua
 Widgets\SmoothStatusBarMixin.lua
