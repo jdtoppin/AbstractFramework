@@ -20,6 +20,7 @@ local DEFAULT_CONTENT_GAP = 8
 local ROW_SPACING = 2
 local HEADING_TOP_GAP = 4
 local TOGGLE_SIZE = 18
+local ROW_ICON_ALPHA = 0.9
 local INDENT_PER_DEPTH = 22
 local SCROLLBAR_WIDTH = 10
 local SCROLLBAR_THUMB_MIN_HEIGHT = 20
@@ -489,7 +490,7 @@ local function CreateRow(list)
 
     row.icon = row:CreateTexture(nil, "ARTWORK")
     AF.SetSize(row.icon, list.iconSize, list.iconSize)
-    row.icon:SetVertexColor(1, 1, 1, 0.9)
+    row.icon:SetVertexColor(1, 1, 1, ROW_ICON_ALPHA)
 
     row.label = AF.CreateFontString(row, nil, "white")
     row.label:SetJustifyH("LEFT")
@@ -554,7 +555,10 @@ end
 -- desaturate+tint treatment to atlas/texture shapes only; the string path
 -- always resets desaturation/vertex color to plain white so a pooled row
 -- that previously showed a tinted atlas/texture icon comes back clean when
--- reused for a glyph (string) row.
+-- reused for a glyph (string) row. ROW_ICON_ALPHA is preserved on both
+-- paths (rather than following the reset to the API's default alpha of 1)
+-- so every row keeps the same baseline icon transparency set in CreateRow,
+-- regardless of which icon shape it last rendered.
 local function ApplyNodeIcon(list, iconRegion, icon)
     if type(icon) == "table" then
         if icon.atlas then
@@ -565,11 +569,11 @@ local function ApplyNodeIcon(list, iconRegion, icon)
         local tint = list.textureTint
         if tint then
             iconRegion:SetDesaturated(true)
-            iconRegion:SetVertexColor(tint[1], tint[2], tint[3])
+            iconRegion:SetVertexColor(tint[1], tint[2], tint[3], ROW_ICON_ALPHA)
         end
     else
         iconRegion:SetDesaturated(false)
-        iconRegion:SetVertexColor(1, 1, 1)
+        iconRegion:SetVertexColor(1, 1, 1, ROW_ICON_ALPHA)
         AF.SetAdaptiveIcon(iconRegion, icon)
     end
 end

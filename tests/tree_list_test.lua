@@ -333,6 +333,7 @@ do
     assertEqual(stringRow.icon.vertexColor[1], 1, "string path resets vertex color r")
     assertEqual(stringRow.icon.vertexColor[2], 1, "string path resets vertex color g")
     assertEqual(stringRow.icon.vertexColor[3], 1, "string path resets vertex color b")
+    assertEqual(stringRow.icon.vertexColor[4], 0.9, "string path preserves baseline icon alpha")
 
     -- with textureTint: atlas/texture rows are desaturated + tinted, the
     -- string row is not
@@ -350,6 +351,7 @@ do
     assertEqual(tintAtlasRow.icon.vertexColor[1], 0.8, "atlas row tinted r")
     assertEqual(tintAtlasRow.icon.vertexColor[2], 0.8, "atlas row tinted g")
     assertEqual(tintAtlasRow.icon.vertexColor[3], 0.8, "atlas row tinted b")
+    assertEqual(tintAtlasRow.icon.vertexColor[4], 0.9, "atlas row tint preserves baseline icon alpha")
 
     assertEqual(tintTextureRow.icon.desaturated, true, "texture row desaturated when tinted")
     assertEqual(tintTextureRow.icon.vertexColor[1], 0.8, "texture row tinted r")
