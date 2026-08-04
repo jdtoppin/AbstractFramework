@@ -2,6 +2,7 @@
 .vscode/
 .release/*
 .utils/*.csv
+.utils/node_modules/
 Libs/*
 
 # excluded
