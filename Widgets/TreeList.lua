@@ -546,6 +546,34 @@ local function ResetRowForEntry(row, entry)
     row.highlight:Hide()
 end
 
+-- Dispatches a row's icon region to one of three shapes:
+--   string            -> AF.SetAdaptiveIcon (existing adaptive-icon lookup)
+--   {atlas = name}     -> iconRegion:SetAtlas(name)
+--   {texture = id}     -> iconRegion:SetTexture(id)
+-- list.textureTint (an {r, g, b} triple, or nil) applies a unifying
+-- desaturate+tint treatment to atlas/texture shapes only; the string path
+-- always resets desaturation/vertex color to plain white so a pooled row
+-- that previously showed a tinted atlas/texture icon comes back clean when
+-- reused for a glyph (string) row.
+local function ApplyNodeIcon(list, iconRegion, icon)
+    if type(icon) == "table" then
+        if icon.atlas then
+            iconRegion:SetAtlas(icon.atlas)
+        else
+            iconRegion:SetTexture(icon.texture)
+        end
+        local tint = list.textureTint
+        if tint then
+            iconRegion:SetDesaturated(true)
+            iconRegion:SetVertexColor(tint[1], tint[2], tint[3])
+        end
+    else
+        iconRegion:SetDesaturated(false)
+        iconRegion:SetVertexColor(1, 1, 1)
+        AF.SetAdaptiveIcon(iconRegion, icon)
+    end
+end
+
 local function ApplyEntry(list, row, entry)
     ResetRowForEntry(row, entry)
     row:SetAlpha(1)
@@ -580,7 +608,7 @@ local function ApplyEntry(list, row, entry)
     if icon then
         row.icon:ClearAllPoints()
         row.icon:SetPoint("LEFT", leftInset, 0)
-        AF.SetAdaptiveIcon(row.icon, icon)
+        ApplyNodeIcon(list, row.icon, icon)
         row.icon:SetTexCoord(0, 1, 0, 1)
         row.icon:Show()
         row.label:SetPoint("LEFT", row.icon, "RIGHT", 7, 0)
@@ -1002,6 +1030,8 @@ end
 --- - iconSize number (default 16)
 --- - accentColor string color name for highlight/thumb (default AF.GetAddonAccentColorName())
 --- - fallbackIcon string|nil adaptive icon for icon-less rows in compact mode (default nil)
+--- - textureTint {r:number,g:number,b:number}|nil desaturate+tint treatment applied to
+---   {atlas=...}/{texture=...} node icons only; string icons are unaffected (default nil)
 ---@return AF_TreeList list
 function AF.CreateTreeList(parent, options)
     options = options or {}
@@ -1016,6 +1046,7 @@ function AF.CreateTreeList(parent, options)
     list.iconSize = options.iconSize or DEFAULT_ICON_SIZE
     list.accentColor = options.accentColor or AF.GetAddonAccentColorName()
     list.fallbackIcon = options.fallbackIcon
+    list.textureTint = options.textureTint
     list.compactIconAreaWidth = list.collapsedWidth - ROW_RIGHT_INSET
 
     list.compact = false

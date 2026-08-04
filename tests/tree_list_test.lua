@@ -54,6 +54,8 @@ local textureMethods = {}
 function textureMethods:SetColorTexture(...) self.colorTexture = {...} end
 function textureMethods:SetVertexColor(...) self.vertexColor = {...} end
 function textureMethods:SetTexture(texture) self.texture = texture end
+function textureMethods:SetAtlas(atlas) self.atlas = atlas end
+function textureMethods:SetDesaturated(desaturated) self.desaturated = desaturated end
 function textureMethods:SetTexCoord(...) self.texCoord = {...} end
 function textureMethods:SetAllPoints() self.allPoints = true end
 function textureMethods:SetPoint(...) self.points[#self.points + 1] = {...} end
@@ -297,6 +299,86 @@ do
     assertEqual(heading.kind, "heading", "heading row applied")
     assertEqual(heading.mouseEnabled, false, "heading not clickable")
     assertEqual(heading.label.shown, true, "heading label shown when not compact")
+end
+
+---------------------------------------------------------------------
+-- icon shape dispatch (atlas / texture / string) + textureTint
+---------------------------------------------------------------------
+do
+    local function IconModel()
+        return {
+            {id = "atlasRow", label = "Atlas", icon = {atlas = "X"}},
+            {id = "textureRow", label = "Texture", icon = {texture = 123}},
+            {id = "stringRow", label = "String", icon = "Bag_Misc"},
+        }
+    end
+
+    -- no tint: each shape dispatches to its own texture method, string path
+    -- still resets desaturation/vertex color (in case a pooled row previously
+    -- showed a tinted shape)
+    local parent = CreateFrame("Frame", "Parent")
+    local list = AF.CreateTreeList(parent, {})
+    list.scrollFrame:SetHeight(300)
+    list.scrollBar.frame:SetHeight(300)
+    list:SetModel(IconModel())
+
+    local atlasRow = findActiveRow(list, "atlasRow")
+    local textureRow = findActiveRow(list, "textureRow")
+    local stringRow = findActiveRow(list, "stringRow")
+
+    assertEqual(atlasRow.icon.atlas, "X", "atlas shape calls SetAtlas")
+    assertEqual(textureRow.icon.texture, 123, "texture shape calls SetTexture")
+    assertEqual(stringRow.icon.adaptiveIcon, "Bag_Misc", "string shape uses adaptive icon path")
+    assertEqual(stringRow.icon.desaturated, false, "string path resets desaturation")
+    assertEqual(stringRow.icon.vertexColor[1], 1, "string path resets vertex color r")
+    assertEqual(stringRow.icon.vertexColor[2], 1, "string path resets vertex color g")
+    assertEqual(stringRow.icon.vertexColor[3], 1, "string path resets vertex color b")
+
+    -- with textureTint: atlas/texture rows are desaturated + tinted, the
+    -- string row is not
+    local tintParent = CreateFrame("Frame", "Parent")
+    local tintList = AF.CreateTreeList(tintParent, {textureTint = {0.8, 0.8, 0.8}})
+    tintList.scrollFrame:SetHeight(300)
+    tintList.scrollBar.frame:SetHeight(300)
+    tintList:SetModel(IconModel())
+
+    local tintAtlasRow = findActiveRow(tintList, "atlasRow")
+    local tintTextureRow = findActiveRow(tintList, "textureRow")
+    local tintStringRow = findActiveRow(tintList, "stringRow")
+
+    assertEqual(tintAtlasRow.icon.desaturated, true, "atlas row desaturated when tinted")
+    assertEqual(tintAtlasRow.icon.vertexColor[1], 0.8, "atlas row tinted r")
+    assertEqual(tintAtlasRow.icon.vertexColor[2], 0.8, "atlas row tinted g")
+    assertEqual(tintAtlasRow.icon.vertexColor[3], 0.8, "atlas row tinted b")
+
+    assertEqual(tintTextureRow.icon.desaturated, true, "texture row desaturated when tinted")
+    assertEqual(tintTextureRow.icon.vertexColor[1], 0.8, "texture row tinted r")
+    assertEqual(tintTextureRow.icon.vertexColor[2], 0.8, "texture row tinted g")
+    assertEqual(tintTextureRow.icon.vertexColor[3], 0.8, "texture row tinted b")
+
+    assertEqual(tintStringRow.icon.desaturated, false, "string row not desaturated when tinted")
+    assertEqual(tintStringRow.icon.vertexColor[1], 1, "string row not tinted r")
+    assertEqual(tintStringRow.icon.vertexColor[2], 1, "string row not tinted g")
+    assertEqual(tintStringRow.icon.vertexColor[3], 1, "string row not tinted b")
+
+    -- pooled-row reuse: a row that showed a tinted atlas icon must reset when
+    -- reused for a string-icon (glyph) entry
+    local reuseParent = CreateFrame("Frame", "Parent")
+    local reuseList = AF.CreateTreeList(reuseParent, {textureTint = {0.8, 0.8, 0.8}})
+    reuseList.scrollFrame:SetHeight(300)
+    reuseList.scrollBar.frame:SetHeight(300)
+    reuseList:SetModel({{id = "a", label = "A", icon = {atlas = "Foo"}}})
+
+    local reusedRow = findActiveRow(reuseList, "a")
+    assertEqual(reusedRow.icon.desaturated, true, "pooled row starts tinted")
+
+    reuseList:SetModel({{id = "b", label = "B", icon = "Bag_Misc"}})
+    local newRow = reuseList.activeRows[1]
+    assertEqual(newRow, reusedRow, "row object reused by index")
+    assertEqual(newRow.icon.desaturated, false, "reused row resets desaturation for string icon")
+    assertEqual(newRow.icon.vertexColor[1], 1, "reused row resets vertex color r")
+    assertEqual(newRow.icon.vertexColor[2], 1, "reused row resets vertex color g")
+    assertEqual(newRow.icon.vertexColor[3], 1, "reused row resets vertex color b")
 end
 
 ---------------------------------------------------------------------
