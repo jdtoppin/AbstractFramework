@@ -1,7 +1,7 @@
 r30:
 
 - Add AF.AttachTransientScrollBar (template-free fade-in/out scroll bar with inactivity fade and drag hold)
-- Add AF.CreateTreeList (scrollable tree list: pooled rows, accent highlight, chevron toggles, animated expand/collapse, compact mode with icon-only leaf rows and chevron+icon parent rows, atlas/texture icon shapes with a unified textureTint desaturate+tint option; expansion state is shared between compact and expanded presentations with a single scroll offset)
+- Add AF.CreateTreeList (scrollable tree list: pooled rows, accent highlight, chevron toggles, animated expand/collapse, compact mode with icon-only leaf rows and chevron+icon parent rows, icons rendered full-color on lightweight square plates (`iconPlateColors` border/fill, no tint/desaturate option) with the standard icon crop applied to texture shapes only, defaulting to 20px icons in 28px rows (22px headings, 14px compact-mode chevrons); expansion state is shared between compact and expanded presentations with a single scroll offset)
 - Add AF.CreateSidebarRail (sidebar rail wrapping a tree list: manual SetCollapsed/GetCollapsed/ToggleCollapsed/SetOnCollapsedChanged collapse API, presentation-width publication, content inset helpers)
 - Add Bag_All/Bag_Empty/Bag_IndividualBags/Bag_Misc adaptive icons for bag sidebar fallback states (the rest of the original Bag_* set was pruned after BFInfinite's Bags sidebar v2 moved consumable-subclass and equipment-slot icons to native client art)
 
