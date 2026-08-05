@@ -334,6 +334,32 @@ do
 end
 
 ---------------------------------------------------------------------
+-- default sizing: 1440p legibility pass grows the icon plate (16->20) and
+-- row height (26->28); headings are untouched (still 22)
+---------------------------------------------------------------------
+do
+    local parent = CreateFrame("Frame", "Parent")
+    local list = AF.CreateTreeList(parent, {})
+    list.scrollFrame:SetHeight(300)
+    list.scrollBar.frame:SetHeight(300)
+
+    assertEqual(list.iconSize, 20, "default icon size is 20")
+    assertEqual(list.rowHeight, 28, "default row height is 28")
+    assertEqual(list.headingHeight, 22, "default heading height unchanged")
+
+    list:SetModel(BuildModel())
+
+    local dataRow = findActiveRow(list, "all")
+    assertEqual(dataRow.iconPlate.width, 20, "data row icon plate is 20px wide")
+    assertEqual(dataRow.iconPlate.height, 20, "data row icon plate is 20px tall")
+    assertEqual(dataRow.height, 28, "data row frame height is 28px")
+
+    local heading = list.activeRows[1]
+    assertEqual(heading.kind, "heading", "first active row is the heading")
+    assertEqual(heading.height, 22, "heading row frame height unchanged at 22px")
+end
+
+---------------------------------------------------------------------
 -- icon shape dispatch (atlas / texture / string) + plate + crop
 ---------------------------------------------------------------------
 do
@@ -623,9 +649,12 @@ do
     list:SetModel(BuildModel())
     list:SetSelection("all")
 
-    -- expanded mode: chevron anchored from the row's RIGHT edge (unchanged)
+    -- expanded mode: chevron anchored from the row's RIGHT edge (unchanged),
+    -- full expanded size (TOGGLE_SIZE = 18)
     local equipmentRow = findActiveRow(list, "equipment")
     assertEqual(equipmentRow.toggle.shown, true, "expanded parent chevron shown")
+    assertEqual(equipmentRow.toggle.width, 18, "expanded chevron is full-size (18px)")
+    assertEqual(equipmentRow.toggle.height, 18, "expanded chevron is full-size (18px)")
     local expandedTogglePoint = equipmentRow.toggle.points[#equipmentRow.toggle.points]
     assertEqual(expandedTogglePoint[1], "RIGHT", "expanded chevron anchored from row RIGHT")
     assertEqual(expandedTogglePoint[2], -12, "expanded chevron inset unchanged (SCROLLBAR_WIDTH+2)")
@@ -637,16 +666,21 @@ do
     assertEqual(allRow.toggle.shown, false, "compact leaf chevron hidden")
 
     -- parent row ("equipment", collapsed, has children): chevron shown and
-    -- positioned beside the icon, both fitting inside collapsedWidth (40)
+    -- positioned beside the icon, both fitting inside collapsedWidth (40).
+    -- compact geometry: leftInset(4) + plate(20) + gap(0) + chevron(14) +
+    -- rightInset(2) = 40 = collapsedWidth, so the icon's right edge (4+20=24)
+    -- sits flush against the chevron's left edge (collapsedWidth - 14 - 2 = 24)
     equipmentRow = findActiveRow(list, "equipment")
     assertEqual(equipmentRow.toggle.shown, true, "compact parent chevron shown")
     assertEqual(equipmentRow.toggle.mouseEnabled, true, "compact parent chevron clickable")
+    assertEqual(equipmentRow.toggle.width, 14, "compact chevron is reduced size (14px)")
+    assertEqual(equipmentRow.toggle.height, 14, "compact chevron is reduced size (14px)")
 
     local iconPoint = equipmentRow.iconPlate.points[#equipmentRow.iconPlate.points]
     assertEqual(iconPoint[2], 4, "compact parent icon plate left-inset ~4px")
     local togglePoint = equipmentRow.toggle.points[#equipmentRow.toggle.points]
     assertEqual(togglePoint[1], "LEFT", "compact parent chevron anchored from row LEFT")
-    assertEqual(togglePoint[2], 20, "compact parent chevron sits within collapsedWidth (40 - 18 - 2)")
+    assertEqual(togglePoint[2], 24, "compact parent chevron sits within collapsedWidth (40 - 14 - 2)")
 
     -- clicking the chevron toggles expansion without touching selection
     assertEqual(list.expandedById.equipment, false, "starts collapsed")
@@ -661,12 +695,14 @@ do
     assertEqual(list.expandedById.equipment, false, "chevron click collapses again")
     assertEqual(list.selectionId, "all", "selection still unchanged after collapse")
 
-    -- returning to expanded mode restores the right-anchored chevron
+    -- returning to expanded mode restores the right-anchored, full-size chevron
     list:SetCompact(false)
     equipmentRow = findActiveRow(list, "equipment")
     local restoredTogglePoint = equipmentRow.toggle.points[#equipmentRow.toggle.points]
     assertEqual(restoredTogglePoint[1], "RIGHT", "chevron re-anchored from row RIGHT after leaving compact")
     assertEqual(restoredTogglePoint[2], -12, "chevron inset restored after leaving compact")
+    assertEqual(equipmentRow.toggle.width, 18, "chevron size restored to full 18px after leaving compact")
+    assertEqual(equipmentRow.toggle.height, 18, "chevron size restored to full 18px after leaving compact")
 end
 
 ---------------------------------------------------------------------
@@ -688,16 +724,16 @@ do
     assertEqual(list.scrollFrame:GetVerticalScroll(), 0, "offset clamped to zero range")
     drain()
 
-    -- ten rows: content height 10*26 + 9*2 = 278, range 228
+    -- ten rows: content height 10*28 + 9*2 = 298, range 248
     local bigModel = {}
     for index = 1, 10 do
         bigModel[index] = {id = "row" .. index, label = "Row " .. index}
     end
     list:SetModel(bigModel)
-    assertEqual(list.scrollContent.height, 278, "content height")
+    assertEqual(list.scrollContent.height, 298, "content height")
     assertEqual(bar.frame.shown, true, "bar revealed when overflow appears")
     assertEqual(bar.frame.mouseEnabled, true, "revealed bar accepts mouse")
-    assertEqual(bar.frame.minMax[2], 228, "slider range")
+    assertEqual(bar.frame.minMax[2], 248, "slider range")
     assertEqual(bar.thumb.height, 20, "thumb clamped to min height")
 
     -- fade after inactivity: mouse is elsewhere
@@ -705,9 +741,9 @@ do
     assertEqual(bar.frame.shown, false, "bar fades after inactivity")
     assertEqual(bar.frame.mouseEnabled, false, "faded bar has mouse disabled")
 
-    -- wheel scrolls and reveals
+    -- wheel scrolls and reveals: scrollStep = (rowHeight(28) + ROW_SPACING(2)) * 3 = 90
     list.scrollFrame.scripts.OnMouseWheel(list.scrollFrame, -1)
-    assertEqual(list.scrollFrame:GetVerticalScroll(), 84, "wheel step applied")
+    assertEqual(list.scrollFrame:GetVerticalScroll(), 90, "wheel step applied")
     assertEqual(bar.frame.shown, true, "wheel reveals bar")
 
     -- fade-generation invalidation: a later reveal makes the pending
@@ -731,7 +767,7 @@ do
 
     -- dragging the slider writes clamped offsets
     bar.frame:SetValue(500)
-    assertEqual(list.scrollFrame:GetVerticalScroll(), 228, "slider value clamped to range")
+    assertEqual(list.scrollFrame:GetVerticalScroll(), 248, "slider value clamped to range")
     drain()
 end
 
@@ -751,13 +787,13 @@ do
     list:SetModel(bigModel)
 
     list.scrollBar:SetScroll(1000)
-    assertEqual(list.scrollFrame:GetVerticalScroll(), 228, "offset clamped to range")
+    assertEqual(list.scrollFrame:GetVerticalScroll(), 248, "offset clamped to range")
 
     -- one offset across compact/expanded presentation flips
     list:SetCompact(true)
-    assertEqual(list.scrollFrame:GetVerticalScroll(), 228, "offset preserved entering compact")
+    assertEqual(list.scrollFrame:GetVerticalScroll(), 248, "offset preserved entering compact")
     list:SetCompact(false)
-    assertEqual(list.scrollFrame:GetVerticalScroll(), 228, "offset preserved leaving compact")
+    assertEqual(list.scrollFrame:GetVerticalScroll(), 248, "offset preserved leaving compact")
 
     -- shrinking content re-clamps the shared offset
     local smallModel = {}
@@ -765,8 +801,8 @@ do
         smallModel[index] = {id = "row" .. index, label = "Row " .. index}
     end
     list:SetModel(smallModel)
-    -- content height 5*26 + 4*2 = 138, range 88
-    assertEqual(list.scrollFrame:GetVerticalScroll(), 88, "offset re-clamped after shrink")
+    -- content height 5*28 + 4*2 = 148, range 98
+    assertEqual(list.scrollFrame:GetVerticalScroll(), 98, "offset re-clamped after shrink")
     drain()
 end
 

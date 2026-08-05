@@ -12,9 +12,9 @@ local pairs = pairs
 ---------------------------------------------------------------------
 local DEFAULT_EXPANDED_WIDTH = 170
 local DEFAULT_COLLAPSED_WIDTH = 40
-local DEFAULT_ROW_HEIGHT = 26
+local DEFAULT_ROW_HEIGHT = 28
 local DEFAULT_HEADING_HEIGHT = 22
-local DEFAULT_ICON_SIZE = 16
+local DEFAULT_ICON_SIZE = 20
 local DEFAULT_CONTENT_GAP = 8
 
 local ROW_SPACING = 2
@@ -22,6 +22,12 @@ local HEADING_TOP_GAP = 4
 local TOGGLE_SIZE = 18
 local COMPACT_ICON_INSET = 4
 local COMPACT_TOGGLE_INSET = 2
+-- compact rail (collapsedWidth = 40) chevron: leftInset(4) + plate(20) +
+-- gap(0) + chevron(14) + rightInset(2) = 40, so the chevron shrinks from the
+-- expanded TOGGLE_SIZE (18) to 14 only while compact; the same pooled row's
+-- toggle is resized back to TOGGLE_SIZE when the presentation returns to
+-- expanded (see ApplyEntry)
+local COMPACT_TOGGLE_SIZE = 14
 local ROW_ICON_ALPHA = 0.9
 local INDENT_PER_DEPTH = 22
 local SCROLLBAR_WIDTH = 10
@@ -620,10 +626,11 @@ local function ApplyEntry(list, row, entry)
     row.label:SetFontObject("AF_FONT_NORMAL")
     row.label:SetShown(not compact)
 
-    -- compact parent rows (hasChildren) keep the chevron beside the icon:
-    -- icon left-inset ~4px, chevron right-inset ~2px, the pair fitting
-    -- exactly inside collapsedWidth (4 + 16 icon + 18 chevron + 2 = 40).
-    -- compact leaf rows stay icon-only, centered in the full compact area.
+    -- compact parent rows (hasChildren) keep the (shrunk) chevron beside the
+    -- icon: icon left-inset 4px, chevron right-inset 2px, the pair fitting
+    -- exactly inside collapsedWidth (4 + 20 icon + 14 chevron + 2 = 40; see
+    -- COMPACT_TOGGLE_SIZE's arithmetic comment). compact leaf rows stay
+    -- icon-only, centered in the full compact area.
     local leftInset
     if compact then
         leftInset = entry.hasChildren and COMPACT_ICON_INSET
@@ -649,12 +656,17 @@ local function ApplyEntry(list, row, entry)
         ))
         row.toggle:ClearAllPoints()
         if compact then
-            -- anchored from the row's LEFT (which coincides with the
-            -- viewport's left edge in both presentations) so it lands
-            -- inside the visible collapsedWidth strip rather than off
-            -- past the row's full (always-expandedWidth) frame
-            row.toggle:SetPoint("LEFT", list.collapsedWidth - TOGGLE_SIZE - COMPACT_TOGGLE_INSET, 0)
+            -- shrink to the compact chevron size (see COMPACT_TOGGLE_SIZE's
+            -- arithmetic comment above) and anchor from the row's LEFT
+            -- (which coincides with the viewport's left edge in both
+            -- presentations) so it lands inside the visible collapsedWidth
+            -- strip rather than off past the row's full (always-
+            -- expandedWidth) frame
+            AF.SetSize(row.toggle, COMPACT_TOGGLE_SIZE, COMPACT_TOGGLE_SIZE)
+            row.toggle:SetPoint("LEFT", list.collapsedWidth - COMPACT_TOGGLE_SIZE - COMPACT_TOGGLE_INSET, 0)
         else
+            -- restore the full expanded chevron size on this pooled row
+            AF.SetSize(row.toggle, TOGGLE_SIZE, TOGGLE_SIZE)
             row.toggle:SetPoint("RIGHT", -(SCROLLBAR_WIDTH + 2), 0)
         end
         row.toggle:Show()
@@ -1065,9 +1077,9 @@ end
 ---@param options? table
 --- - expandedWidth number full presentation width (default 170)
 --- - collapsedWidth number compact presentation width, used to center icon-only rows (default 40)
---- - rowHeight number (default 26)
+--- - rowHeight number (default 28)
 --- - headingHeight number (default 22)
---- - iconSize number (default 16)
+--- - iconSize number (default 20)
 --- - accentColor string color name for highlight/thumb (default AF.GetAddonAccentColorName())
 --- - fallbackIcon string|nil adaptive icon for icon-less rows in compact mode (default nil)
 --- - iconPlateColors {border={r,g,b,a}, fill={r,g,b,a}}|nil colors for each row's
