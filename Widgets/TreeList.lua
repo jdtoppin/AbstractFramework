@@ -28,7 +28,7 @@ local COMPACT_TOGGLE_INSET = 2
 -- toggle is resized back to TOGGLE_SIZE when the presentation returns to
 -- expanded (see ApplyEntry)
 local COMPACT_TOGGLE_SIZE = 14
-local ROW_ICON_ALPHA = 0.9
+local ROW_ICON_ALPHA = 1
 local INDENT_PER_DEPTH = 22
 local SCROLLBAR_WIDTH = 10
 local SCROLLBAR_THUMB_MIN_HEIGHT = 20
@@ -67,7 +67,7 @@ end
 --- - width number (default 10)
 --- - thumbMinHeight number (default 20)
 --- - fadeDelay number seconds of inactivity before fading out (default 0.9)
---- - scrollStep number offset per wheel notch (default (26 + 2) * 3)
+--- - scrollStep number offset per wheel notch (default (28 + 2) * 3)
 --- - accentColor string color name (default AF.GetAddonAccentColorName())
 ---@return AF_TransientScrollBar controller with SetScroll, Update, Reveal, ScheduleFadeOut, IsDragging, SetOnPointerEnter, SetOnPointerLeave
 function AF.AttachTransientScrollBar(host, scrollFrame, scrollContent, options)
@@ -498,14 +498,20 @@ local function CreateRow(list)
 
     -- one plate per pooled row, created once here and reused for every
     -- ApplyEntry call on this row -- never recreated per render. Uses AF's
-    -- lightweight one-fill/four-edge backdrop (the same performance-friendly
-    -- path the bag icons use, deliberately avoiding the nine-region
-    -- template-driven backdrop path).
-    row.iconPlate = AF.CreateFrame(row)
-    AF.SetSize(row.iconPlate, list.iconSize, list.iconSize)
+    -- sanctioned lightweight-bordered-frame constructor (same one-fill/
+    -- four-edge backdrop the bag icons use, deliberately avoiding the
+    -- nine-region template-driven backdrop path) so the plate is registered
+    -- with the pixel updater AFTER the backdrop exists and its UpdatePixels
+    -- chains AF.UpdateLightweightBackdropPixels -- a plain AF.CreateFrame +
+    -- AF.ApplyLightweightBackdropWithColors would register before the
+    -- backdrop exists and never get its pixels re-laid-out on a UI-scale
+    -- change.
     local plateColors = list.iconPlateColors
-    AF.ApplyLightweightBackdropWithColors(
-        row.iconPlate,
+    row.iconPlate = AF.CreateLightweightBorderedFrame(
+        row,
+        nil,
+        list.iconSize,
+        list.iconSize,
         plateColors and plateColors.fill,
         plateColors and plateColors.border
     )

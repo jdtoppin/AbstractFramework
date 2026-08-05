@@ -60,7 +60,15 @@ local textureMethods = {}
 function textureMethods:SetColorTexture(...) self.colorTexture = {...} end
 function textureMethods:SetVertexColor(...) self.vertexColor = {...} end
 function textureMethods:SetTexture(texture) self.texture = texture end
-function textureMethods:SetAtlas(atlas) self.atlas = atlas end
+function textureMethods:SetAtlas(atlas)
+    self.atlas = atlas
+    -- mirrors Blizzard's real Texture:SetAtlas, which redefines the
+    -- texture's coordinate rect from the atlas's own sub-region -- silently
+    -- overwriting (without an explicit SetTexCoord call, so texCoordCalls
+    -- is untouched) any texcoord a prior pooled-row render left behind,
+    -- e.g. the 0.08-0.92 crop from a texture-icon row
+    self.texCoord = nil
+end
 function textureMethods:SetDesaturated(desaturated) self.desaturated = desaturated end
 function textureMethods:SetTexCoord(...)
     self.texCoord = {...}
@@ -200,6 +208,23 @@ AF.ApplyDefaultTexCoord = function(tex) tex:SetTexCoord(AF.GetDefaultTexCoord())
 AF.ApplyLightweightBackdropWithColors = function(frame, color, borderColor, borderSize)
     frame.iconPlateBackdrop = {color = color, borderColor = borderColor, borderSize = borderSize}
     backdropCalls[#backdropCalls + 1] = frame
+end
+
+-- mirrors Widgets/Frame.lua's AF.CreateLightweightBorderedFrame: the
+-- sanctioned constructor that applies the backdrop BEFORE the frame is
+-- registered with the pixel updater, and whose mixin's UpdatePixels chains
+-- AF.UpdateLightweightBackdropPixels -- unlike a bare AF.CreateFrame +
+-- AF.ApplyLightweightBackdropWithColors call, which registers first and
+-- never gets its backdrop pixels re-laid-out on a UI-scale change
+AF.CreateLightweightBorderedFrame = function(parent, name, width, height, color, borderColor, borderSize)
+    local frame = CreateFrame("Frame", name, parent)
+    AF.SetSize(frame, width, height)
+    AF.ApplyLightweightBackdropWithColors(frame, color, borderColor, borderSize)
+    frame.isLightweightBorderedFrame = true
+    function frame:UpdatePixels()
+        self.updatePixelsCalled = (self.updatePixelsCalled or 0) + 1
+    end
+    return frame
 end
 
 -- mirrors Utils/PixelUtil.lua's AF.SetInside(region, relativeTo, offsetX, offsetY)
@@ -391,6 +416,17 @@ do
     assertEqual(atlasRow.icon.parent, atlasRow.iconPlate, "icon region parented inside the plate")
     assertEqual(#backdropCalls - backdropCallsBefore, 3, "one backdrop call per pooled row")
 
+    -- plate built via AF's sanctioned lightweight-bordered-frame constructor
+    -- (backdrop applied before pixel-updater registration, UpdatePixels
+    -- chains AF.UpdateLightweightBackdropPixels) rather than a bare
+    -- AF.CreateFrame + AF.ApplyLightweightBackdropWithColors pairing
+    assertTrue(atlasRow.iconPlate.isLightweightBorderedFrame, "icon plate built via AF.CreateLightweightBorderedFrame")
+    assertEqual(type(atlasRow.iconPlate.UpdatePixels), "function", "icon plate carries the lightweight-bordered-frame mixin's UpdatePixels")
+
+    -- icons render at full alpha over the plate (icons must be full-color
+    -- per spec, not composited toward the plate's near-black default fill)
+    assertEqual(atlasRow.icon.vertexColor[4], 1, "row icon renders at full alpha")
+
     list:SetModel(IconModel())
     assertEqual(findActiveRow(list, "atlasRow"), atlasRow, "row object reused by index")
     assertEqual(#backdropCalls - backdropCallsBefore, 3, "plate created once per pooled row, not recreated on re-render")
@@ -457,6 +493,28 @@ do
     assertEqual(newRow2.icon.texCoord[2], 0.92, "reused row (atlas->texture) crops texcoord right")
     assertEqual(newRow2.icon.texCoord[3], 0.08, "reused row (atlas->texture) crops texcoord top")
     assertEqual(newRow2.icon.texCoord[4], 0.92, "reused row (atlas->texture) crops texcoord bottom")
+
+    -- pooled-row reuse: a row that showed a CROPPED texture (0.08-0.92) must
+    -- not keep that stale crop when reused for an atlas row. ApplyNodeIcon's
+    -- atlas branch calls only SetAtlas -- no explicit texcoord reset -- so
+    -- this depends entirely on SetAtlas overwriting the stale UVs itself;
+    -- this exact seam is where the prior round's critical bug lived
+    local reuseParent3 = CreateFrame("Frame", "Parent")
+    local reuseList3 = AF.CreateTreeList(reuseParent3, {})
+    reuseList3.scrollFrame:SetHeight(300)
+    reuseList3.scrollBar.frame:SetHeight(300)
+    reuseList3:SetModel({{id = "a", label = "A", icon = {texture = 7}}})
+
+    local reusedRow3 = findActiveRow(reuseList3, "a")
+    assertEqual(reusedRow3.icon.texture, 7, "pooled row starts as a cropped texture")
+    assertEqual(reusedRow3.icon.texCoord[2], 0.92, "pooled row starts with the 0.08-0.92 crop")
+
+    reuseList3:SetModel({{id = "b", label = "B", icon = {atlas = "Baz"}}})
+    local newRow3 = reuseList3.activeRows[1]
+    assertEqual(newRow3, reusedRow3, "row object reused by index (texture->atlas)")
+    assertEqual(newRow3.icon.atlas, "Baz", "reused row (texture->atlas) calls SetAtlas")
+    assertEqual(newRow3.icon.texCoordCalls, 1, "reused row (texture->atlas) gets no additional texcoord call")
+    assertEqual(newRow3.icon.texCoord, nil, "reused row (texture->atlas) no longer carries the stale texture crop")
 end
 
 ---------------------------------------------------------------------
