@@ -168,6 +168,7 @@ end
 -- AF stub
 ---------------------------------------------------------------------
 local resizeCalls = {}
+local backdropCalls = {}
 
 local AF = {}
 
@@ -186,6 +187,28 @@ AF.GetIcon = function(name) return "Icons\\" .. name end
 AF.SetAdaptiveIcon = function(texture, icon)
     texture.adaptiveIcon = icon
     return true
+end
+
+-- mirrors Widgets/Texture.lua's AF.GetDefaultTexCoord/AF.ApplyDefaultTexCoord:
+-- the standard Blizzard-icon crop that trims rounded stock corners
+AF.GetDefaultTexCoord = function() return 0.08, 0.92, 0.08, 0.92 end
+AF.ApplyDefaultTexCoord = function(tex) tex:SetTexCoord(AF.GetDefaultTexCoord()) end
+
+-- mirrors Widgets/Base.lua's AF.ApplyLightweightBackdropWithColors: records
+-- the (color, borderColor) it was invoked with so tests can observe both
+-- "was a plate applied" and "was it applied exactly once per pooled row"
+AF.ApplyLightweightBackdropWithColors = function(frame, color, borderColor, borderSize)
+    frame.iconPlateBackdrop = {color = color, borderColor = borderColor, borderSize = borderSize}
+    backdropCalls[#backdropCalls + 1] = frame
+end
+
+-- mirrors Utils/PixelUtil.lua's AF.SetInside(region, relativeTo, offsetX, offsetY)
+AF.SetInside = function(region, relativeTo, offsetX, offsetY)
+    offsetX = offsetX or 0
+    offsetY = offsetY or offsetX
+    region:ClearAllPoints()
+    region:SetPoint("TOPLEFT", relativeTo, "TOPLEFT", offsetX, -offsetY)
+    region:SetPoint("BOTTOMRIGHT", relativeTo, "BOTTOMRIGHT", -offsetX, offsetY)
 end
 
 AF.CreateFrame = function(parent, name, width, height)
@@ -311,7 +334,7 @@ do
 end
 
 ---------------------------------------------------------------------
--- icon shape dispatch (atlas / texture / string) + textureTint
+-- icon shape dispatch (atlas / texture / string) + plate + crop
 ---------------------------------------------------------------------
 do
     local function IconModel()
@@ -322,96 +345,74 @@ do
         }
     end
 
-    -- no tint: each shape dispatches to its own texture method, string path
-    -- still resets desaturation/vertex color (in case a pooled row previously
-    -- showed a tinted shape)
     local parent = CreateFrame("Frame", "Parent")
     local list = AF.CreateTreeList(parent, {})
     list.scrollFrame:SetHeight(300)
     list.scrollBar.frame:SetHeight(300)
+
+    local backdropCallsBefore = #backdropCalls
     list:SetModel(IconModel())
 
     local atlasRow = findActiveRow(list, "atlasRow")
     local textureRow = findActiveRow(list, "textureRow")
     local stringRow = findActiveRow(list, "stringRow")
 
+    -- every row's icon sits on a plate: one lightweight backdrop per pooled
+    -- row, created once (not per ApplyEntry)
+    assertTrue(atlasRow.iconPlate, "atlas row has an icon plate")
+    assertTrue(textureRow.iconPlate, "texture row has an icon plate")
+    assertTrue(stringRow.iconPlate, "string row has an icon plate")
+    assertEqual(atlasRow.icon.parent, atlasRow.iconPlate, "icon region parented inside the plate")
+    assertEqual(#backdropCalls - backdropCallsBefore, 3, "one backdrop call per pooled row")
+
+    list:SetModel(IconModel())
+    assertEqual(findActiveRow(list, "atlasRow"), atlasRow, "row object reused by index")
+    assertEqual(#backdropCalls - backdropCallsBefore, 3, "plate created once per pooled row, not recreated on re-render")
+
+    -- atlas: SetAtlas only, full color, never texcoord-cropped -- SetAtlas
+    -- defines both the atlas page texture and its sub-region UVs, so
+    -- cropping afterward would stretch the sprite sheet across the icon
     assertEqual(atlasRow.icon.atlas, "X", "atlas shape calls SetAtlas")
+    assertEqual(atlasRow.icon.texCoordCalls, nil, "atlas shape gets no texcoord call")
+
+    -- texture: SetTexture + the standard Blizzard icon crop (0.08-0.92) so
+    -- the rounded stock corners vanish inside the square plate
     assertEqual(textureRow.icon.texture, 123, "texture shape calls SetTexture")
+    assertEqual(textureRow.icon.texCoord[1], 0.08, "texture shape crops texcoord left")
+    assertEqual(textureRow.icon.texCoord[2], 0.92, "texture shape crops texcoord right")
+    assertEqual(textureRow.icon.texCoord[3], 0.08, "texture shape crops texcoord top")
+    assertEqual(textureRow.icon.texCoord[4], 0.92, "texture shape crops texcoord bottom")
+
+    -- string (glyph/adaptive icon): full color, uncropped, full texcoords
     assertEqual(stringRow.icon.adaptiveIcon, "Bag_Misc", "string shape uses adaptive icon path")
-    assertEqual(stringRow.icon.desaturated, false, "string path resets desaturation")
-    assertEqual(stringRow.icon.vertexColor[1], 1, "string path resets vertex color r")
-    assertEqual(stringRow.icon.vertexColor[2], 1, "string path resets vertex color g")
-    assertEqual(stringRow.icon.vertexColor[3], 1, "string path resets vertex color b")
-    assertEqual(stringRow.icon.vertexColor[4], 0.9, "string path preserves baseline icon alpha")
+    assertEqual(stringRow.icon.texCoord[1], 0, "string shape uses full texcoord left")
+    assertEqual(stringRow.icon.texCoord[2], 1, "string shape uses full texcoord right")
+    assertEqual(stringRow.icon.texCoord[3], 0, "string shape uses full texcoord top")
+    assertEqual(stringRow.icon.texCoord[4], 1, "string shape uses full texcoord bottom")
 
-    -- atlas UVs must survive: SetAtlas defines both the atlas page texture
-    -- and its sub-region texcoords, so the atlas branch must never call
-    -- SetTexCoord(0, 1, 0, 1) afterward (that would stretch the full sheet
-    -- across the 16px icon). texture/string shapes still get the reset.
-    assertEqual(atlasRow.icon.texCoordCalls, nil, "atlas shape never resets SetTexCoord")
-    assertEqual(textureRow.icon.texCoord[1], 0, "texture shape resets texcoord left")
-    assertEqual(textureRow.icon.texCoord[2], 1, "texture shape resets texcoord right")
-    assertEqual(textureRow.icon.texCoord[3], 0, "texture shape resets texcoord top")
-    assertEqual(textureRow.icon.texCoord[4], 1, "texture shape resets texcoord bottom")
-    assertEqual(stringRow.icon.texCoord[1], 0, "string shape resets texcoord left")
-    assertEqual(stringRow.icon.texCoord[2], 1, "string shape resets texcoord right")
-    assertEqual(stringRow.icon.texCoord[3], 0, "string shape resets texcoord top")
-    assertEqual(stringRow.icon.texCoord[4], 1, "string shape resets texcoord bottom")
-
-    -- with textureTint: atlas/texture rows are desaturated + tinted, the
-    -- string row is not
-    local tintParent = CreateFrame("Frame", "Parent")
-    local tintList = AF.CreateTreeList(tintParent, {textureTint = {0.8, 0.8, 0.8}})
-    tintList.scrollFrame:SetHeight(300)
-    tintList.scrollBar.frame:SetHeight(300)
-    tintList:SetModel(IconModel())
-
-    local tintAtlasRow = findActiveRow(tintList, "atlasRow")
-    local tintTextureRow = findActiveRow(tintList, "textureRow")
-    local tintStringRow = findActiveRow(tintList, "stringRow")
-
-    assertEqual(tintAtlasRow.icon.desaturated, true, "atlas row desaturated when tinted")
-    assertEqual(tintAtlasRow.icon.vertexColor[1], 0.8, "atlas row tinted r")
-    assertEqual(tintAtlasRow.icon.vertexColor[2], 0.8, "atlas row tinted g")
-    assertEqual(tintAtlasRow.icon.vertexColor[3], 0.8, "atlas row tinted b")
-    assertEqual(tintAtlasRow.icon.vertexColor[4], 0.9, "atlas row tint preserves baseline icon alpha")
-
-    assertEqual(tintTextureRow.icon.desaturated, true, "texture row desaturated when tinted")
-    assertEqual(tintTextureRow.icon.vertexColor[1], 0.8, "texture row tinted r")
-    assertEqual(tintTextureRow.icon.vertexColor[2], 0.8, "texture row tinted g")
-    assertEqual(tintTextureRow.icon.vertexColor[3], 0.8, "texture row tinted b")
-
-    assertEqual(tintStringRow.icon.desaturated, false, "string row not desaturated when tinted")
-    assertEqual(tintStringRow.icon.vertexColor[1], 1, "string row not tinted r")
-    assertEqual(tintStringRow.icon.vertexColor[2], 1, "string row not tinted g")
-    assertEqual(tintStringRow.icon.vertexColor[3], 1, "string row not tinted b")
-
-    -- pooled-row reuse: a row that showed a tinted atlas icon must reset when
-    -- reused for a string-icon (glyph) entry
+    -- pooled-row reuse: a row that showed an atlas icon (no texcoord call
+    -- yet) must reset to full texcoords when reused for a string (glyph) row
     local reuseParent = CreateFrame("Frame", "Parent")
-    local reuseList = AF.CreateTreeList(reuseParent, {textureTint = {0.8, 0.8, 0.8}})
+    local reuseList = AF.CreateTreeList(reuseParent, {})
     reuseList.scrollFrame:SetHeight(300)
     reuseList.scrollBar.frame:SetHeight(300)
     reuseList:SetModel({{id = "a", label = "A", icon = {atlas = "Foo"}}})
 
     local reusedRow = findActiveRow(reuseList, "a")
-    assertEqual(reusedRow.icon.desaturated, true, "pooled row starts tinted")
-    assertEqual(reusedRow.icon.texCoordCalls, nil, "pooled row starts atlas, no texcoord reset yet")
+    assertEqual(reusedRow.icon.atlas, "Foo", "pooled row starts atlas")
+    assertEqual(reusedRow.icon.texCoordCalls, nil, "pooled row starts atlas, no texcoord call yet")
 
     reuseList:SetModel({{id = "b", label = "B", icon = "Bag_Misc"}})
     local newRow = reuseList.activeRows[1]
-    assertEqual(newRow, reusedRow, "row object reused by index")
-    assertEqual(newRow.icon.desaturated, false, "reused row resets desaturation for string icon")
-    assertEqual(newRow.icon.vertexColor[1], 1, "reused row resets vertex color r")
-    assertEqual(newRow.icon.vertexColor[2], 1, "reused row resets vertex color g")
-    assertEqual(newRow.icon.vertexColor[3], 1, "reused row resets vertex color b")
+    assertEqual(newRow, reusedRow, "row object reused by index (atlas->string)")
+    assertEqual(newRow.icon.adaptiveIcon, "Bag_Misc", "reused row uses adaptive icon path")
     assertEqual(newRow.icon.texCoord[1], 0, "reused row (atlas->string) resets texcoord left")
     assertEqual(newRow.icon.texCoord[2], 1, "reused row (atlas->string) resets texcoord right")
     assertEqual(newRow.icon.texCoord[3], 0, "reused row (atlas->string) resets texcoord top")
     assertEqual(newRow.icon.texCoord[4], 1, "reused row (atlas->string) resets texcoord bottom")
 
-    -- pooled-row reuse: a row that showed an atlas icon must also reset
-    -- texcoords when reused for a plain texture-icon entry
+    -- pooled-row reuse: a row that showed an atlas icon must also get
+    -- cropped when reused for a plain texture-icon entry
     local reuseParent2 = CreateFrame("Frame", "Parent")
     local reuseList2 = AF.CreateTreeList(reuseParent2, {})
     reuseList2.scrollFrame:SetHeight(300)
@@ -420,16 +421,45 @@ do
 
     local reusedRow2 = findActiveRow(reuseList2, "a")
     assertEqual(reusedRow2.icon.atlas, "Foo", "pooled row starts atlas")
-    assertEqual(reusedRow2.icon.texCoordCalls, nil, "pooled row starts atlas, no texcoord reset yet")
+    assertEqual(reusedRow2.icon.texCoordCalls, nil, "pooled row starts atlas, no texcoord call yet")
 
     reuseList2:SetModel({{id = "b", label = "B", icon = {texture = 42}}})
     local newRow2 = reuseList2.activeRows[1]
     assertEqual(newRow2, reusedRow2, "row object reused by index (atlas->texture)")
     assertEqual(newRow2.icon.texture, 42, "reused row (atlas->texture) sets texture")
-    assertEqual(newRow2.icon.texCoord[1], 0, "reused row (atlas->texture) resets texcoord left")
-    assertEqual(newRow2.icon.texCoord[2], 1, "reused row (atlas->texture) resets texcoord right")
-    assertEqual(newRow2.icon.texCoord[3], 0, "reused row (atlas->texture) resets texcoord top")
-    assertEqual(newRow2.icon.texCoord[4], 1, "reused row (atlas->texture) resets texcoord bottom")
+    assertEqual(newRow2.icon.texCoord[1], 0.08, "reused row (atlas->texture) crops texcoord left")
+    assertEqual(newRow2.icon.texCoord[2], 0.92, "reused row (atlas->texture) crops texcoord right")
+    assertEqual(newRow2.icon.texCoord[3], 0.08, "reused row (atlas->texture) crops texcoord top")
+    assertEqual(newRow2.icon.texCoord[4], 0.92, "reused row (atlas->texture) crops texcoord bottom")
+end
+
+---------------------------------------------------------------------
+-- icon plate colors: default to AF's lightweight-backdrop defaults (nil
+-- passed through, letting AF.ApplyLightweightBackdropWithColors apply its
+-- own "background"/"border" defaults); explicit iconPlateColors passed
+-- straight through to every pooled row's plate
+---------------------------------------------------------------------
+do
+    local parent = CreateFrame("Frame", "Parent")
+    local list = AF.CreateTreeList(parent, {})
+    list.scrollFrame:SetHeight(300)
+    list.scrollBar.frame:SetHeight(300)
+    list:SetModel({{id = "a", label = "A", icon = "Bag_Misc"}})
+
+    local row = findActiveRow(list, "a")
+    assertEqual(row.iconPlate.iconPlateBackdrop.color, nil, "no iconPlateColors: fill left to AF's own default")
+    assertEqual(row.iconPlate.iconPlateBackdrop.borderColor, nil, "no iconPlateColors: border left to AF's own default")
+
+    local colors = {fill = {0.1, 0.2, 0.3, 1}, border = {0.4, 0.5, 0.6, 1}}
+    local coloredParent = CreateFrame("Frame", "Parent")
+    local coloredList = AF.CreateTreeList(coloredParent, {iconPlateColors = colors})
+    coloredList.scrollFrame:SetHeight(300)
+    coloredList.scrollBar.frame:SetHeight(300)
+    coloredList:SetModel({{id = "a", label = "A", icon = "Bag_Misc"}})
+
+    local coloredRow = findActiveRow(coloredList, "a")
+    assertEqual(coloredRow.iconPlate.iconPlateBackdrop.color, colors.fill, "iconPlateColors.fill passed through to the plate")
+    assertEqual(coloredRow.iconPlate.iconPlateBackdrop.borderColor, colors.border, "iconPlateColors.border passed through to the plate")
 end
 
 ---------------------------------------------------------------------
@@ -568,7 +598,7 @@ do
     -- compact rows are icon-only
     local weaponsRow = findActiveRow(list, "weapons")
     assertEqual(weaponsRow.label.shown, false, "compact row label hidden")
-    assertEqual(weaponsRow.icon.shown, true, "compact row icon shown")
+    assertEqual(weaponsRow.iconPlate.shown, true, "compact row icon plate shown")
     assertEqual(weaponsRow.icon.adaptiveIcon, "Bag_Misc", "fallback icon used for icon-less compact row")
     assertEqual(list.activeRows[1].label.shown, false, "compact heading label hidden")
 
@@ -612,8 +642,8 @@ do
     assertEqual(equipmentRow.toggle.shown, true, "compact parent chevron shown")
     assertEqual(equipmentRow.toggle.mouseEnabled, true, "compact parent chevron clickable")
 
-    local iconPoint = equipmentRow.icon.points[#equipmentRow.icon.points]
-    assertEqual(iconPoint[2], 4, "compact parent icon left-inset ~4px")
+    local iconPoint = equipmentRow.iconPlate.points[#equipmentRow.iconPlate.points]
+    assertEqual(iconPoint[2], 4, "compact parent icon plate left-inset ~4px")
     local togglePoint = equipmentRow.toggle.points[#equipmentRow.toggle.points]
     assertEqual(togglePoint[1], "LEFT", "compact parent chevron anchored from row LEFT")
     assertEqual(togglePoint[2], 20, "compact parent chevron sits within collapsedWidth (40 - 18 - 2)")
@@ -748,6 +778,21 @@ do
     local source = file:read("*a")
     file:close()
     assertEqual(source:find('SetScript("OnUpdate"', 1, true), nil, "no OnUpdate handlers")
+end
+
+---------------------------------------------------------------------
+-- tint removal: textureTint is fully deleted, and icon plates use AF's
+-- lightweight one-fill/four-edge backdrop, never NineSlice/BackdropTemplate
+---------------------------------------------------------------------
+do
+    local file = assert(io.open("Widgets/TreeList.lua", "r"))
+    local source = file:read("*a")
+    file:close()
+
+    assertNotContains(source, "textureTint", "textureTint option fully deleted")
+    assertNotContains(source, "SetDesaturated", "no desaturate treatment anywhere in the widget")
+    assertNotContains(source, "NineSlice", "no NineSlice backdrop path")
+    assertNotContains(source, "BackdropTemplate", "no BackdropTemplate backdrop path")
 end
 
 ---------------------------------------------------------------------

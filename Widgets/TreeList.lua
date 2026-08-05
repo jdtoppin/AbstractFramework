@@ -490,8 +490,22 @@ local function CreateRow(list)
     AF.SetWidth(row.highlight, 1)
     row.highlight:Hide()
 
-    row.icon = row:CreateTexture(nil, "ARTWORK")
-    AF.SetSize(row.icon, list.iconSize, list.iconSize)
+    -- one plate per pooled row, created once here and reused for every
+    -- ApplyEntry call on this row -- never recreated per render. Uses AF's
+    -- lightweight one-fill/four-edge backdrop (the same performance-friendly
+    -- path the bag icons use, deliberately avoiding the nine-region
+    -- template-driven backdrop path).
+    row.iconPlate = AF.CreateFrame(row)
+    AF.SetSize(row.iconPlate, list.iconSize, list.iconSize)
+    local plateColors = list.iconPlateColors
+    AF.ApplyLightweightBackdropWithColors(
+        row.iconPlate,
+        plateColors and plateColors.fill,
+        plateColors and plateColors.border
+    )
+
+    row.icon = row.iconPlate:CreateTexture(nil, "ARTWORK")
+    AF.SetInside(row.icon, row.iconPlate, 1)
     row.icon:SetVertexColor(1, 1, 1, ROW_ICON_ALPHA)
 
     row.label = AF.CreateFontString(row, nil, "white")
@@ -549,42 +563,30 @@ local function ResetRowForEntry(row, entry)
     row.highlight:Hide()
 end
 
--- Dispatches a row's icon region to one of three shapes:
+-- Dispatches a row's icon region (row.icon, seated on its row.iconPlate) to
+-- one of three shapes:
 --   string            -> AF.SetAdaptiveIcon (existing adaptive-icon lookup)
 --   {atlas = name}     -> iconRegion:SetAtlas(name)
 --   {texture = id}     -> iconRegion:SetTexture(id)
--- list.textureTint (an {r, g, b} triple, or nil) applies a unifying
--- desaturate+tint treatment to atlas/texture shapes only; the string path
--- always resets desaturation/vertex color to plain white so a pooled row
--- that previously showed a tinted atlas/texture icon comes back clean when
--- reused for a glyph (string) row. ROW_ICON_ALPHA is preserved on both
--- paths (rather than following the reset to the API's default alpha of 1)
--- so every row keeps the same baseline icon transparency set in CreateRow,
--- regardless of which icon shape it last rendered. texture/string shapes
--- reset SetTexCoord(0, 1, 0, 1) so a pooled row previously showing an
--- atlas sub-region comes back to full-texture UVs; the atlas branch must
--- never do this reset, since SetAtlas already defines the sub-region UVs
--- it needs.
+-- Every icon renders full-color on its plate -- no desaturate/tint
+-- treatment. texture-shape icons get the standard Blizzard icon crop
+-- (AF.ApplyDefaultTexCoord, 0.08-0.92) so their rounded stock corners are
+-- clipped by the square plate; atlas-shape icons are never texcoord-cropped,
+-- since SetAtlas already defines both the atlas page texture and the
+-- sub-region UVs it needs -- cropping afterward would stretch the whole
+-- sprite sheet across the icon. The string (glyph/adaptive) path always
+-- resets to full texcoords (0, 1, 0, 1) so a pooled row previously showing
+-- a cropped texture or an atlas sub-region comes back to a clean
+-- full-texture UV rect when reused for a glyph row.
 local function ApplyNodeIcon(list, iconRegion, icon)
     if type(icon) == "table" then
         if icon.atlas then
-            -- SetAtlas defines both the atlas page texture AND its
-            -- sub-region UVs; resetting texcoords afterward would stretch
-            -- the whole sprite sheet across the icon, so the atlas branch
-            -- must never call SetTexCoord.
             iconRegion:SetAtlas(icon.atlas)
         else
             iconRegion:SetTexture(icon.texture)
-            iconRegion:SetTexCoord(0, 1, 0, 1)
-        end
-        local tint = list.textureTint
-        if tint then
-            iconRegion:SetDesaturated(true)
-            iconRegion:SetVertexColor(tint[1], tint[2], tint[3], ROW_ICON_ALPHA)
+            AF.ApplyDefaultTexCoord(iconRegion)
         end
     else
-        iconRegion:SetDesaturated(false)
-        iconRegion:SetVertexColor(1, 1, 1, ROW_ICON_ALPHA)
         AF.SetAdaptiveIcon(iconRegion, icon)
         iconRegion:SetTexCoord(0, 1, 0, 1)
     end
@@ -608,7 +610,7 @@ local function ApplyEntry(list, row, entry)
         row.label:SetPoint("LEFT", 8, 0)
         row.label:SetPoint("RIGHT", -ROW_RIGHT_INSET, 0)
         row.label:SetShown(not list.compact)
-        row.icon:Hide()
+        row.iconPlate:Hide()
         row.toggle:Hide()
         return
     end
@@ -631,13 +633,13 @@ local function ApplyEntry(list, row, entry)
     end
     local icon = entry.icon or compact and list.fallbackIcon
     if icon then
-        row.icon:ClearAllPoints()
-        row.icon:SetPoint("LEFT", leftInset, 0)
+        row.iconPlate:ClearAllPoints()
+        row.iconPlate:SetPoint("LEFT", leftInset, 0)
         ApplyNodeIcon(list, row.icon, icon)
-        row.icon:Show()
-        row.label:SetPoint("LEFT", row.icon, "RIGHT", 7, 0)
+        row.iconPlate:Show()
+        row.label:SetPoint("LEFT", row.iconPlate, "RIGHT", 7, 0)
     else
-        row.icon:Hide()
+        row.iconPlate:Hide()
         row.label:SetPoint("LEFT", leftInset, 0)
     end
 
@@ -1068,8 +1070,9 @@ end
 --- - iconSize number (default 16)
 --- - accentColor string color name for highlight/thumb (default AF.GetAddonAccentColorName())
 --- - fallbackIcon string|nil adaptive icon for icon-less rows in compact mode (default nil)
---- - textureTint {r:number,g:number,b:number}|nil desaturate+tint treatment applied to
----   {atlas=...}/{texture=...} node icons only; string icons are unaffected (default nil)
+--- - iconPlateColors {border={r,g,b,a}, fill={r,g,b,a}}|nil colors for each row's
+---   icon plate (AF's lightweight one-fill/four-edge backdrop); defaults to
+---   AF.ApplyLightweightBackdropWithColors' own "background"/"border" defaults (default nil)
 ---@return AF_TreeList list
 function AF.CreateTreeList(parent, options)
     options = options or {}
@@ -1084,7 +1087,7 @@ function AF.CreateTreeList(parent, options)
     list.iconSize = options.iconSize or DEFAULT_ICON_SIZE
     list.accentColor = options.accentColor or AF.GetAddonAccentColorName()
     list.fallbackIcon = options.fallbackIcon
-    list.textureTint = options.textureTint
+    list.iconPlateColors = options.iconPlateColors
     list.compactIconAreaWidth = list.collapsedWidth - ROW_RIGHT_INSET
 
     list.compact = false
