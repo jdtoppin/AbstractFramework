@@ -50,6 +50,10 @@ if (!CHECK_ONLY) {
 }
 
 const ICONS = {
+    Bag_All: "apps",
+    Bag_Empty: "box-off",
+    Bag_IndividualBags: "briefcase",
+    Bag_Misc: "package",
     Housing_Accents: "pillow",
     Housing_All: "apps",
     Housing_Beds: "bed",

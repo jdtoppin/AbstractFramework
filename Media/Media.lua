@@ -23,6 +23,7 @@ end
 AF.hasHousingIcons = true
 AF.hasViewIcons = true
 AF.hasLockIcons = true
+AF.hasBagIcons = true
 -- Frame:CreateVectorGraphics is absent in Retail 12.0.7.68887 and present in
 -- PTR 12.1.0.68914, where both Texture and VectorGraphics regions support SVG
 -- files. Use the co-shipped method as a client-version proxy while keeping
