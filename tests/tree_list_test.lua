@@ -255,12 +255,12 @@ local function BuildModel()
     return {
         {kind = "heading", label = "CATEGORIES"},
         {id = "all", label = "All", icon = "Bag_All"},
-        {id = "equipment", label = "Equipment", icon = "Bag_Equipment", children = {
+        {id = "equipment", label = "Equipment", icon = "Bag_IndividualBags", children = {
             {id = "weapons", label = "Weapons"},
             {id = "armor", label = "Armor"},
         }},
         {id = "equipment", label = "Duplicate"},
-        {id = "consumables", label = "Consumables", icon = "Bag_Consumables", expanded = true, children = {
+        {id = "consumables", label = "Consumables", icon = "Bag_Empty", expanded = true, children = {
             {id = "potions", label = "Potions"},
         }},
     }
