@@ -62,7 +62,10 @@ function textureMethods:SetVertexColor(...) self.vertexColor = {...} end
 function textureMethods:SetTexture(texture) self.texture = texture end
 function textureMethods:SetAtlas(atlas) self.atlas = atlas end
 function textureMethods:SetDesaturated(desaturated) self.desaturated = desaturated end
-function textureMethods:SetTexCoord(...) self.texCoord = {...} end
+function textureMethods:SetTexCoord(...)
+    self.texCoord = {...}
+    self.texCoordCalls = (self.texCoordCalls or 0) + 1
+end
 function textureMethods:SetAllPoints() self.allPoints = true end
 function textureMethods:SetPoint(...) self.points[#self.points + 1] = {...} end
 function textureMethods:ClearAllPoints() self.points = {} end
@@ -341,6 +344,20 @@ do
     assertEqual(stringRow.icon.vertexColor[3], 1, "string path resets vertex color b")
     assertEqual(stringRow.icon.vertexColor[4], 0.9, "string path preserves baseline icon alpha")
 
+    -- atlas UVs must survive: SetAtlas defines both the atlas page texture
+    -- and its sub-region texcoords, so the atlas branch must never call
+    -- SetTexCoord(0, 1, 0, 1) afterward (that would stretch the full sheet
+    -- across the 16px icon). texture/string shapes still get the reset.
+    assertEqual(atlasRow.icon.texCoordCalls, nil, "atlas shape never resets SetTexCoord")
+    assertEqual(textureRow.icon.texCoord[1], 0, "texture shape resets texcoord left")
+    assertEqual(textureRow.icon.texCoord[2], 1, "texture shape resets texcoord right")
+    assertEqual(textureRow.icon.texCoord[3], 0, "texture shape resets texcoord top")
+    assertEqual(textureRow.icon.texCoord[4], 1, "texture shape resets texcoord bottom")
+    assertEqual(stringRow.icon.texCoord[1], 0, "string shape resets texcoord left")
+    assertEqual(stringRow.icon.texCoord[2], 1, "string shape resets texcoord right")
+    assertEqual(stringRow.icon.texCoord[3], 0, "string shape resets texcoord top")
+    assertEqual(stringRow.icon.texCoord[4], 1, "string shape resets texcoord bottom")
+
     -- with textureTint: atlas/texture rows are desaturated + tinted, the
     -- string row is not
     local tintParent = CreateFrame("Frame", "Parent")
@@ -379,6 +396,7 @@ do
 
     local reusedRow = findActiveRow(reuseList, "a")
     assertEqual(reusedRow.icon.desaturated, true, "pooled row starts tinted")
+    assertEqual(reusedRow.icon.texCoordCalls, nil, "pooled row starts atlas, no texcoord reset yet")
 
     reuseList:SetModel({{id = "b", label = "B", icon = "Bag_Misc"}})
     local newRow = reuseList.activeRows[1]
@@ -387,6 +405,31 @@ do
     assertEqual(newRow.icon.vertexColor[1], 1, "reused row resets vertex color r")
     assertEqual(newRow.icon.vertexColor[2], 1, "reused row resets vertex color g")
     assertEqual(newRow.icon.vertexColor[3], 1, "reused row resets vertex color b")
+    assertEqual(newRow.icon.texCoord[1], 0, "reused row (atlas->string) resets texcoord left")
+    assertEqual(newRow.icon.texCoord[2], 1, "reused row (atlas->string) resets texcoord right")
+    assertEqual(newRow.icon.texCoord[3], 0, "reused row (atlas->string) resets texcoord top")
+    assertEqual(newRow.icon.texCoord[4], 1, "reused row (atlas->string) resets texcoord bottom")
+
+    -- pooled-row reuse: a row that showed an atlas icon must also reset
+    -- texcoords when reused for a plain texture-icon entry
+    local reuseParent2 = CreateFrame("Frame", "Parent")
+    local reuseList2 = AF.CreateTreeList(reuseParent2, {})
+    reuseList2.scrollFrame:SetHeight(300)
+    reuseList2.scrollBar.frame:SetHeight(300)
+    reuseList2:SetModel({{id = "a", label = "A", icon = {atlas = "Foo"}}})
+
+    local reusedRow2 = findActiveRow(reuseList2, "a")
+    assertEqual(reusedRow2.icon.atlas, "Foo", "pooled row starts atlas")
+    assertEqual(reusedRow2.icon.texCoordCalls, nil, "pooled row starts atlas, no texcoord reset yet")
+
+    reuseList2:SetModel({{id = "b", label = "B", icon = {texture = 42}}})
+    local newRow2 = reuseList2.activeRows[1]
+    assertEqual(newRow2, reusedRow2, "row object reused by index (atlas->texture)")
+    assertEqual(newRow2.icon.texture, 42, "reused row (atlas->texture) sets texture")
+    assertEqual(newRow2.icon.texCoord[1], 0, "reused row (atlas->texture) resets texcoord left")
+    assertEqual(newRow2.icon.texCoord[2], 1, "reused row (atlas->texture) resets texcoord right")
+    assertEqual(newRow2.icon.texCoord[3], 0, "reused row (atlas->texture) resets texcoord top")
+    assertEqual(newRow2.icon.texCoord[4], 1, "reused row (atlas->texture) resets texcoord bottom")
 end
 
 ---------------------------------------------------------------------

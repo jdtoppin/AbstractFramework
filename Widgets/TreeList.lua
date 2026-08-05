@@ -560,13 +560,22 @@ end
 -- reused for a glyph (string) row. ROW_ICON_ALPHA is preserved on both
 -- paths (rather than following the reset to the API's default alpha of 1)
 -- so every row keeps the same baseline icon transparency set in CreateRow,
--- regardless of which icon shape it last rendered.
+-- regardless of which icon shape it last rendered. texture/string shapes
+-- reset SetTexCoord(0, 1, 0, 1) so a pooled row previously showing an
+-- atlas sub-region comes back to full-texture UVs; the atlas branch must
+-- never do this reset, since SetAtlas already defines the sub-region UVs
+-- it needs.
 local function ApplyNodeIcon(list, iconRegion, icon)
     if type(icon) == "table" then
         if icon.atlas then
+            -- SetAtlas defines both the atlas page texture AND its
+            -- sub-region UVs; resetting texcoords afterward would stretch
+            -- the whole sprite sheet across the icon, so the atlas branch
+            -- must never call SetTexCoord.
             iconRegion:SetAtlas(icon.atlas)
         else
             iconRegion:SetTexture(icon.texture)
+            iconRegion:SetTexCoord(0, 1, 0, 1)
         end
         local tint = list.textureTint
         if tint then
@@ -577,6 +586,7 @@ local function ApplyNodeIcon(list, iconRegion, icon)
         iconRegion:SetDesaturated(false)
         iconRegion:SetVertexColor(1, 1, 1, ROW_ICON_ALPHA)
         AF.SetAdaptiveIcon(iconRegion, icon)
+        iconRegion:SetTexCoord(0, 1, 0, 1)
     end
 end
 
@@ -624,7 +634,6 @@ local function ApplyEntry(list, row, entry)
         row.icon:ClearAllPoints()
         row.icon:SetPoint("LEFT", leftInset, 0)
         ApplyNodeIcon(list, row.icon, icon)
-        row.icon:SetTexCoord(0, 1, 0, 1)
         row.icon:Show()
         row.label:SetPoint("LEFT", row.icon, "RIGHT", 7, 0)
     else
