@@ -11,10 +11,11 @@ local pairs = pairs
 -- shared constants
 ---------------------------------------------------------------------
 local DEFAULT_EXPANDED_WIDTH = 170
--- 40px is the compact content lane: 4px inset + 20px icon + 14px chevron
--- + 2px gap. Reserve a separate 10px lane for the transient scrollbar, so
+-- 48px is the compact content lane: 12px inset + 20px icon + 14px chevron
+-- + 2px gap. The same 12px inset clears the 7px orange hover strip in both
+-- presentations. Reserve a separate 10px lane for the transient scrollbar, so
 -- parent chevrons remain fully visible and clickable while the list scrolls.
-local DEFAULT_COLLAPSED_WIDTH = 50
+local DEFAULT_COLLAPSED_WIDTH = 58
 local DEFAULT_ROW_HEIGHT = 28
 local DEFAULT_HEADING_HEIGHT = 22
 local DEFAULT_ICON_SIZE = 20
@@ -27,11 +28,14 @@ local TOGGLE_SIZE = 18
 -- expanded icon plate four pixels beyond it so the orange gradient never
 -- visually runs into the plate's border.
 local EXPANDED_ROW_LEFT_INSET = 12
-local COMPACT_ICON_INSET = 4
+-- Like EXPANDED_ROW_LEFT_INSET, keep compact plates past the 7px navigation
+-- strip. This needs a 48px content lane once the compact parent chevron is
+-- included (12 + 20 + 14 + 2).
+local COMPACT_ICON_INSET = 12
 -- Gap between a compact parent chevron and the dedicated scrollbar lane.
 local COMPACT_TOGGLE_INSET = 2
--- Compact parent content: leftInset(4) + plate(20) + chevron(14) + gap(2)
--- = 40px, followed by the dedicated 10px scrollbar lane above. The chevron
+-- Compact parent content: leftInset(12) + plate(20) + chevron(14) + gap(2)
+-- = 48px, followed by the dedicated 10px scrollbar lane above. The chevron
 -- shrinks from the expanded TOGGLE_SIZE (18) to 14 only while compact; the
 -- same pooled row's toggle is resized back to TOGGLE_SIZE on expansion.
 local COMPACT_TOGGLE_SIZE = 14
@@ -693,7 +697,7 @@ local function ApplyEntry(list, row, entry)
     row.label:SetShown(not compact)
 
     -- Compact parent rows (hasChildren) keep the shrunken chevron immediately
-    -- beside the icon in the 40px content lane. The remaining 10px at the
+    -- beside the icon in the 48px content lane. The remaining 10px at the
     -- right is reserved exclusively for the transient scrollbar. Compact leaf
     -- rows stay icon-only, centered in their own content area.
     local leftInset
@@ -1145,7 +1149,7 @@ end
 ---@param parent Frame
 ---@param options? table
 --- - expandedWidth number full presentation width (default 170)
---- - collapsedWidth number compact presentation width, clamped to retain a dedicated scrollbar lane (default 50)
+--- - collapsedWidth number compact presentation width, clamped to retain a dedicated scrollbar lane (default 58)
 --- - rowHeight number (default 28)
 --- - headingHeight number (default 22)
 --- - iconSize number (default 20)
@@ -1333,7 +1337,7 @@ end
 
 ---@param parent Frame
 ---@param options? table all AF.CreateTreeList options, plus:
---- - collapsedWidth number rail width while collapsed, clamped to retain a dedicated scrollbar lane (default 50)
+--- - collapsedWidth number rail width while collapsed, clamped to retain a dedicated scrollbar lane (default 58)
 ---@return AF_SidebarRail rail
 function AF.CreateSidebarRail(parent, options)
     options = options or {}

@@ -55,7 +55,6 @@ const ICONS = {
     Bag_Empty: "box-off",
     Bag_IndividualBags: "briefcase",
     Bag_Misc: "package",
-    Bag_Miscellaneous: "category-2",
     Bag_ProfessionEquipment: "shirt",
     Bag_ProfessionTool: "tools",
     Housing_Accents: "pillow",

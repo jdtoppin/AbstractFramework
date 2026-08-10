@@ -630,7 +630,7 @@ do
     -- (a) collapse fires once, instantly (no animation ticker involved)
     assertEqual(rail:SetCollapsed(true), true, "collapse accepted, state changed")
     assertEqual(rail:GetCollapsed(), true, "GetCollapsed reports collapsed")
-    assertEqual(rail.width, 50, "rail width reserves a compact scrollbar lane")
+    assertEqual(rail.width, 58, "rail width reserves a compact scrollbar lane")
     assertEqual(list:IsCompact(), true, "tree list compact while collapsed")
     assertEqual(#changedCalls, 1, "callback fired once")
     assertEqual(changedCalls[1], true, "callback fired with true")
@@ -695,7 +695,7 @@ do
 
     -- rail collapse must not modify expandedById
     assertEqual(rail:SetCollapsed(true), true, "rail collapsed")
-    assertEqual(rail.width, 50, "rail width reserves a compact scrollbar lane")
+    assertEqual(rail.width, 58, "rail width reserves a compact scrollbar lane")
     assertEqual(list:IsCompact(), true, "compact after collapse")
     assertEqual(list.expandedById.equipment, true, "expandedById untouched by rail collapse")
     assertEqual(visibleIds(list), "heading,all,equipment,weapons,armor,consumables", "compact rail renders expanded children")
@@ -748,7 +748,7 @@ do
     assertEqual(allRow.toggle.shown, false, "compact leaf chevron hidden")
 
     -- Parent row ("equipment", collapsed, has children): chevron shown beside
-    -- the icon in the 40px compact content lane. The remaining 10px (x=40..50)
+    -- the icon in the 48px compact content lane. The remaining 10px (x=48..58)
     -- is dedicated to the transient scrollbar, even while it is faded out.
     equipmentRow = findActiveRow(list, "equipment")
     assertEqual(equipmentRow.toggle.shown, true, "compact parent chevron shown")
@@ -757,15 +757,20 @@ do
     assertEqual(equipmentRow.toggle.height, 14, "compact chevron is reduced size (14px)")
 
     local iconPoint = equipmentRow.iconPlate.points[#equipmentRow.iconPlate.points]
-    assertEqual(iconPoint[2], 4, "compact parent icon plate left-inset ~4px")
+    assertEqual(iconPoint[2], 12,
+        "compact parent icon plate clears the 7px hover navigation strip")
     local togglePoint = equipmentRow.toggle.points[#equipmentRow.toggle.points]
     assertEqual(togglePoint[1], "LEFT", "compact parent chevron anchored from row LEFT")
-    assertEqual(togglePoint[2], 24, "compact parent chevron follows the 20px icon plate")
+    assertEqual(togglePoint[2], 32, "compact parent chevron follows the 20px icon plate")
+    allRow = findActiveRow(list, "all")
+    local leafIconPoint = allRow.iconPlate.points[#allRow.iconPlate.points]
+    assertEqual(leafIconPoint[2], 12,
+        "compact leaf icon also clears the 7px hover navigation strip")
     list.scrollContent:SetHeight(600)
     list.scrollBar:Update()
     assertTrue(list.scrollBar.frame.shown, "overflow reveals the compact scrollbar")
     local scrollBarLeft = list.collapsedWidth - list.scrollBar.frame.width
-    assertEqual(scrollBarLeft, 40, "scrollbar starts after the 40px compact content lane")
+    assertEqual(scrollBarLeft, 48, "scrollbar starts after the 48px compact content lane")
     assertTrue(togglePoint[2] + equipmentRow.toggle.width <= scrollBarLeft - 2,
         "visible compact scrollbar leaves a gap after the chevron")
 
@@ -854,7 +859,7 @@ do
     assertEqual(tooltip.kind, "show", "compact icon row shows a title tooltip")
     assertEqual(tooltip.lines[1], "Equipment", "compact tooltip exposes the hidden row title")
     assertEqual(equipmentRow.label.shown, false, "compact fixture remains icon-only")
-    assertEqual(equipmentRow.tooltipAnchor.points[1][4], 50,
+    assertEqual(equipmentRow.tooltipAnchor.points[1][4], 58,
         "compact tooltip anchor follows the clipped rail instead of expanded row width")
 
     -- A pooled row can be rebound or removed while its tooltip is visible.
