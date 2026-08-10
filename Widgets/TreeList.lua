@@ -530,8 +530,11 @@ local function CreateRow(list)
     -- Rows retain expandedWidth even in the compact rail and are clipped by
     -- the scroll frame. Anchor the tooltip at the presentation's visible edge
     -- instead of row.RIGHT, so compact-row tooltips appear beside the icon
-    -- rather than far into the bag content.
-    row.tooltipAnchor = CreateFrame("Frame", nil, row)
+    -- rather than far into the bag content. The anchor itself must live on
+    -- the tree list rather than the row: AF.Tooltip:SetOwner reparents the
+    -- GameTooltip to its owner, and a row descendant would clip that tooltip
+    -- inside scrollFrame. Its point below still follows the row vertically.
+    row.tooltipAnchor = CreateFrame("Frame", nil, list)
     row.tooltipAnchor.accentColor = list.accentColor
     AF.SetSize(row.tooltipAnchor, 1, 1)
     row:RegisterForClicks("LeftButtonUp")

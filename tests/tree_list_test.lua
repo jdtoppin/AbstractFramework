@@ -352,6 +352,15 @@ local function findActiveRow(list, id)
     end
 end
 
+local function isDescendantOf(frame, ancestor)
+    local parent = frame:GetParent()
+    while parent do
+        if parent == ancestor then return true end
+        parent = parent:GetParent()
+    end
+    return false
+end
+
 ---------------------------------------------------------------------
 -- model normalization
 ---------------------------------------------------------------------
@@ -815,7 +824,12 @@ do
     assertEqual(tooltip.kind, "show", "expanded row hover shows a title tooltip")
     assertEqual(tooltip.widget, equipmentRow.tooltipAnchor,
         "expanded tooltip uses the row's visible-edge anchor")
-    assertEqual(tooltip.widget.parent, equipmentRow, "tooltip anchor belongs to its row")
+    assertEqual(tooltip.widget.parent, list,
+        "tooltip anchor belongs to the non-scrolling tree list")
+    assertTrue(not isDescendantOf(tooltip.widget, list.scrollFrame),
+        "tooltip anchor is outside the scroll frame so the owned GameTooltip is not clipped")
+    assertEqual(tooltip.widget.points[1][2], equipmentRow,
+        "non-scrolling tooltip anchor remains positioned from its row")
     assertEqual(tooltip.anchor, "RIGHT", "expanded tooltip opens beside the sidebar")
     assertEqual(tooltip.lines[1], "Equipment", "expanded tooltip uses the row title")
     assertEqual(equipmentRow.tooltipAnchor.accentColor, "accent",
