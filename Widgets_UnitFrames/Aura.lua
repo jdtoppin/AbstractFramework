@@ -1,5 +1,6 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
+local F = AF.funcs
 
 local GetAuraApplicationDisplayCount = C_UnitAuras.GetAuraApplicationDisplayCount
 local GetAuraDataByAuraInstanceID = C_UnitAuras.GetAuraDataByAuraInstanceID
@@ -657,7 +658,7 @@ local function InitializeCustomAuraButton(button, style, anchor)
     end
 
     if style.width and style.height then
-        AF.SetSize(button, style.width, style.height)
+        button:SetSize(style.width, style.height)
     end
 
     if anchor then
@@ -804,7 +805,7 @@ local function InitializeCustomAuraButton(button, style, anchor)
     end
 end
 
-local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle, anchor, stripAnchor)
+local function CopyCustomAuraNativeOptions(buttonOptions, stripAnchor)
     local options
     if stripAnchor then
         local nativeOptions = {}
@@ -817,9 +818,14 @@ local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle, anchor, st
     else
         options = AF.Copy(buttonOptions or {})
     end
-    local style = AF.Copy(buttonStyle or {})
     assert(options.initializeFrame == nil, "initializeFrame is managed by AbstractFramework")
     assert(options.templateNames == nil, "templateNames are managed by AbstractFramework")
+    return options
+end
+
+local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle, anchor, stripAnchor)
+    local options = CopyCustomAuraNativeOptions(buttonOptions, stripAnchor)
+    local style = AF.Copy(buttonStyle or {})
     if style.tooltip then
         assert(type(style.tooltip.enabled) == "boolean", "tooltip.enabled must be a boolean")
         assert(style.tooltip.enabled or not style.cancelAuraButtons,
@@ -880,6 +886,308 @@ local function GetCustomAuraSlotAnchor(container, slotOptions)
         x = x,
         y = y,
     }
+end
+
+local customAuraDispelOverlayStyleKeys = {
+    alpha = true,
+    atlas = true,
+    blendMode = true,
+    dispelTypeTextureOptions = true,
+    drawLayer = true,
+    frameLevelOffset = true,
+    height = true,
+    inset = true,
+    solidColor = true,
+    subLevel = true,
+    texture = true,
+    width = true,
+}
+
+local customAuraDispelTextureOptionKeys = {
+    customDispelAssetMap = true,
+    customDispelColorCurve = true,
+    customDispelColorMap = true,
+    showWhenHarmful = true,
+    showWhenHelpful = true,
+    showWithoutDispelType = true,
+    style = true,
+}
+
+local customAuraOverlayDrawLayers = {
+    BACKGROUND = true,
+    BORDER = true,
+    ARTWORK = true,
+    OVERLAY = true,
+    HIGHLIGHT = true,
+}
+
+local customAuraOverlayBlendModes = {
+    DISABLE = true,
+    BLEND = true,
+    ALPHAKEY = true,
+    ADD = true,
+    MOD = true,
+}
+
+local function IsCustomDispelTextureStyle(value)
+    if type(value) ~= "number" then return false end
+
+    for _, enumValue in pairs(customDispelTypeTextureStyle) do
+        if value == enumValue then
+            return true
+        end
+    end
+    return false
+end
+
+local function CopyCustomAuraDispelTextureOptions(source)
+    assert(source == nil or type(source) == "table",
+        "dispelTypeTextureOptions must be a table")
+
+    source = source or {}
+    for key in pairs(source) do
+        assert(customAuraDispelTextureOptionKeys[key],
+            "unsupported dispelTypeTextureOptions field: " .. tostring(key))
+    end
+
+    for _, key in ipairs({
+        "showWhenHarmful",
+        "showWhenHelpful",
+        "showWithoutDispelType",
+    }) do
+        assert(source[key] == nil or type(source[key]) == "boolean",
+            "dispelTypeTextureOptions." .. key .. " must be a boolean")
+    end
+    assert(source.style == nil or IsCustomDispelTextureStyle(source.style),
+        "dispelTypeTextureOptions.style must be an enum value")
+    assert(source.customDispelAssetMap == nil
+            or type(source.customDispelAssetMap) == "table",
+        "dispelTypeTextureOptions.customDispelAssetMap must be a table")
+    assert(source.customDispelColorMap == nil
+            or type(source.customDispelColorMap) == "table",
+        "dispelTypeTextureOptions.customDispelColorMap must be a table")
+
+    local copySource = {}
+    for key, value in pairs(source) do
+        if key ~= "customDispelColorCurve" then
+            copySource[key] = value
+        end
+    end
+    local options = AF.Copy(copySource)
+    -- A LuaColorCurveObject is an opaque native object. Preserve it by
+    -- identity instead of treating table-backed test doubles as configuration.
+    options.customDispelColorCurve = source.customDispelColorCurve
+    if options.showWhenHarmful == nil then
+        options.showWhenHarmful = true
+    end
+    if options.showWhenHelpful == nil then
+        options.showWhenHelpful = false
+    end
+    if options.showWithoutDispelType == nil then
+        options.showWithoutDispelType = false
+    end
+    if options.style == nil then
+        options.style = customDispelTypeTextureStyle.PreserveAsset
+    end
+    if options.customDispelColorCurve == nil
+        and options.customDispelColorMap == nil
+    then
+        options.customDispelColorCurve = AF.GetAuraDispelColorCurve()
+    end
+    return options
+end
+
+local function CopyCustomAuraDispelOverlayStyle(overlayStyle)
+    assert(overlayStyle == nil or type(overlayStyle) == "table",
+        "overlayStyle must be a table")
+
+    overlayStyle = overlayStyle or {}
+    for key in pairs(overlayStyle) do
+        assert(customAuraDispelOverlayStyleKeys[key],
+            "unsupported overlayStyle field: " .. tostring(key))
+    end
+
+    local hasWidth = overlayStyle.width ~= nil
+    local hasHeight = overlayStyle.height ~= nil
+    assert(hasWidth == hasHeight,
+        "overlayStyle.width and overlayStyle.height must be supplied together")
+    if hasWidth then
+        assert(IsFiniteNumber(overlayStyle.width) and overlayStyle.width > 0,
+            "overlayStyle.width must be a positive finite number")
+        assert(IsFiniteNumber(overlayStyle.height) and overlayStyle.height > 0,
+            "overlayStyle.height must be a positive finite number")
+    end
+    assert(overlayStyle.alpha == nil
+            or IsFiniteNumber(overlayStyle.alpha)
+                and overlayStyle.alpha >= 0
+                and overlayStyle.alpha <= 1,
+        "overlayStyle.alpha must be between zero and one")
+    assert(overlayStyle.blendMode == nil
+            or customAuraOverlayBlendModes[overlayStyle.blendMode],
+        "overlayStyle.blendMode must be a valid blend mode")
+    assert(overlayStyle.inset == nil
+            or IsFiniteNumber(overlayStyle.inset) and overlayStyle.inset >= 0,
+        "overlayStyle.inset must be a non-negative finite number")
+    assert(overlayStyle.frameLevelOffset == nil
+            or IsFiniteNumber(overlayStyle.frameLevelOffset),
+        "overlayStyle.frameLevelOffset must be a finite number")
+    assert(overlayStyle.subLevel == nil
+            or IsFiniteNumber(overlayStyle.subLevel),
+        "overlayStyle.subLevel must be a finite number")
+
+    local drawLayer = overlayStyle.drawLayer or "ARTWORK"
+    assert(customAuraOverlayDrawLayers[drawLayer],
+        "overlayStyle.drawLayer must be a valid draw layer")
+    assert(overlayStyle.texture == nil
+            or type(overlayStyle.texture) == "string"
+                and overlayStyle.texture ~= ""
+            or IsFiniteNumber(overlayStyle.texture)
+                and overlayStyle.texture > 0,
+        "overlayStyle.texture must be a texture path or file ID")
+    assert(overlayStyle.atlas == nil
+            or type(overlayStyle.atlas) == "string"
+                and overlayStyle.atlas ~= "",
+        "overlayStyle.atlas must be a non-empty string")
+    assert(overlayStyle.solidColor == nil
+            or IsNormalizedColor(overlayStyle.solidColor),
+        "overlayStyle.solidColor must be a normalized RGB or RGBA table")
+
+    local textureSourceCount = 0
+    for _, key in ipairs({"texture", "atlas", "solidColor"}) do
+        if overlayStyle[key] ~= nil then
+            textureSourceCount = textureSourceCount + 1
+        end
+    end
+    assert(textureSourceCount <= 1,
+        "overlayStyle accepts only one of texture, atlas, or solidColor")
+
+    local copySource = {}
+    for key, value in pairs(overlayStyle) do
+        if key ~= "dispelTypeTextureOptions" then
+            copySource[key] = value
+        end
+    end
+    local style = AF.Copy(copySource)
+    style.alpha = style.alpha or 1
+    style.blendMode = style.blendMode or "BLEND"
+    style.drawLayer = drawLayer
+    style.frameLevelOffset = style.frameLevelOffset or 0
+    style.subLevel = style.subLevel or 0
+    style.dispelTypeTextureOptions =
+        CopyCustomAuraDispelTextureOptions(
+            overlayStyle.dispelTypeTextureOptions
+        )
+    return style
+end
+
+local function GetCustomAuraDispelOverlayAnchor(container, slotOptions)
+    local anchor = slotOptions and slotOptions.anchor
+    assert(type(anchor) == "table",
+        "dispel overlay slots require an anchor table")
+    assert(anchor.matchAnchorBounds == nil
+            or type(anchor.matchAnchorBounds) == "boolean",
+        "anchor.matchAnchorBounds must be a boolean")
+
+    if anchor.matchAnchorBounds then
+        assert(anchor.relativeTo ~= nil,
+            "a bounds-matching anchor requires anchor.relativeTo")
+        return {
+            matchAnchorBounds = true,
+            relativeTo = anchor.relativeTo,
+        }
+    end
+
+    return GetCustomAuraSlotAnchor(container, slotOptions)
+end
+
+local function InitializeCustomAuraDispelOverlayButton(button, style, anchor)
+    if style.width and style.height then
+        button:SetSize(style.width, style.height)
+    else
+        assert(anchor.matchAnchorBounds,
+            "a point-anchored dispel overlay requires width and height")
+    end
+
+    button:ClearAllPoints()
+    if anchor.matchAnchorBounds then
+        button:SetAllPoints(anchor.relativeTo)
+    else
+        button:SetPoint(
+            anchor.point,
+            anchor.relativeTo,
+            anchor.relativePoint,
+            anchor.x,
+            anchor.y
+        )
+    end
+
+    local relativeFrameLevel = anchor.relativeTo:GetFrameLevel()
+    if F.isValueNonSecret(relativeFrameLevel) then
+        button:SetFrameLevel(math.max(
+            0,
+            math.min(10000, relativeFrameLevel + style.frameLevelOffset)
+        ))
+    end
+
+    local overlay = button:CreateTexture(
+        nil,
+        style.drawLayer,
+        nil,
+        style.subLevel
+    )
+    if style.inset and style.inset ~= 0 then
+        overlay:SetPoint(
+            "TOPLEFT",
+            button,
+            "TOPLEFT",
+            style.inset,
+            -style.inset
+        )
+        overlay:SetPoint(
+            "BOTTOMRIGHT",
+            button,
+            "BOTTOMRIGHT",
+            -style.inset,
+            style.inset
+        )
+    else
+        overlay:SetAllPoints(button)
+    end
+    if style.texture ~= nil then
+        overlay:SetTexture(style.texture)
+    elseif style.atlas ~= nil then
+        overlay:SetAtlas(style.atlas, false)
+    else
+        overlay:SetColorTexture(unpack(style.solidColor or {1, 1, 1, 1}))
+    end
+    overlay:SetAlpha(style.alpha)
+    overlay:SetBlendMode(style.blendMode)
+    overlay:Hide()
+
+    -- Retail 12.1.0.68914 (wow-ui-source d3915c78) lets addons configure a
+    -- descendant texture before AddDispelTypeTexture transfers visibility and
+    -- vertex-color ownership to Blizzard. The button carries no scripts,
+    -- tooltip, icon, cooldown, or text and must never intercept unit clicks.
+    button:EnableMouse(false)
+    button:AddDispelTypeTexture(
+        overlay,
+        style.dispelTypeTextureOptions
+    )
+end
+
+local function GetCustomAuraDispelOverlayOptions(
+    slotOptions,
+    overlayStyle,
+    anchor
+)
+    local options = CopyCustomAuraNativeOptions(slotOptions, true)
+    local style = CopyCustomAuraDispelOverlayStyle(overlayStyle)
+    assert(style.width ~= nil or anchor.matchAnchorBounds,
+        "a point-anchored dispel overlay requires width and height")
+    options.initializeFrame = function(button)
+        InitializeCustomAuraDispelOverlayButton(button, style, anchor)
+    end
+    return options
 end
 
 ---@return boolean
@@ -1028,11 +1336,7 @@ function AF.SetCustomAuraGroupLayout(container, groupKey, layoutOptions)
     container:SetAuraGroupLayout(groupKey, layoutOptions)
 end
 
-function AF.AddCustomAuraSlot(container, slotKey, filterString, slotOptions, buttonStyle)
-    AssertCustomAuraContainer()
-
-    local anchor = GetCustomAuraSlotAnchor(container, slotOptions)
-    local options = GetCustomAuraButtonOptions(slotOptions, buttonStyle, anchor, true)
+local function AddPreparedCustomAuraSlot(container, slotKey, filterString, options)
     local construction = TrackCustomAuraContainerConstruction(container, false)
     IncrementCustomAuraContainerConstruction(construction, "slotAddAttempts")
     IncrementCustomAuraContainerConstruction(
@@ -1048,6 +1352,38 @@ function AF.AddCustomAuraSlot(container, slotKey, filterString, slotOptions, but
         customAuraSingleInitialFrameReservation
     )
     return button
+end
+
+function AF.AddCustomAuraSlot(container, slotKey, filterString, slotOptions, buttonStyle)
+    AssertCustomAuraContainer()
+
+    local anchor = GetCustomAuraSlotAnchor(container, slotOptions)
+    local options = GetCustomAuraButtonOptions(slotOptions, buttonStyle, anchor, true)
+    return AddPreparedCustomAuraSlot(container, slotKey, filterString, options)
+end
+
+---@param container Frame
+---@param slotKey string
+---@param filterString string
+---@param slotOptions table Native slot options plus an AF-only anchor table.
+---@param overlayStyle? table Construction-owned overlay presentation.
+---@return Button button
+function AF.AddCustomAuraDispelOverlaySlot(
+    container,
+    slotKey,
+    filterString,
+    slotOptions,
+    overlayStyle
+)
+    AssertCustomAuraContainer()
+
+    local anchor = GetCustomAuraDispelOverlayAnchor(container, slotOptions)
+    local options = GetCustomAuraDispelOverlayOptions(
+        slotOptions,
+        overlayStyle,
+        anchor
+    )
+    return AddPreparedCustomAuraSlot(container, slotKey, filterString, options)
 end
 
 function AF.SetCustomAuraSlotFilterString(container, slotKey, filterString)
