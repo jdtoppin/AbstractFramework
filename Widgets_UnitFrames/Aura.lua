@@ -760,7 +760,7 @@ local function InitializeCustomAuraButton(button, style, anchor)
         button:SetApplicationCount(stackText)
     end
     if dispelOverlay then
-        -- Retail 12.1.0.68914 (wow-ui-source d3915c78) applies Blizzard's
+        -- Retail 12.1.0.69189 (wow-ui-source a520b6c27bb8) applies Blizzard's
         -- Magic/Curse/Disease/Poison/Bleed/None colors to PreserveAsset when
         -- no custom color curve or map is supplied.
         local dispelOptions = {
