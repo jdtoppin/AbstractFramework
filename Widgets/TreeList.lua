@@ -11,7 +11,10 @@ local pairs = pairs
 -- shared constants
 ---------------------------------------------------------------------
 local DEFAULT_EXPANDED_WIDTH = 170
-local DEFAULT_COLLAPSED_WIDTH = 40
+-- 40px is the compact content lane: 4px inset + 20px icon + 14px chevron
+-- + 2px gap. Reserve a separate 10px lane for the transient scrollbar, so
+-- parent chevrons remain fully visible and clickable while the list scrolls.
+local DEFAULT_COLLAPSED_WIDTH = 50
 local DEFAULT_ROW_HEIGHT = 28
 local DEFAULT_HEADING_HEIGHT = 22
 local DEFAULT_ICON_SIZE = 20
@@ -20,13 +23,17 @@ local DEFAULT_CONTENT_GAP = 8
 local ROW_SPACING = 2
 local HEADING_TOP_GAP = 4
 local TOGGLE_SIZE = 18
+-- The 7px hover navigation strip starts at the row's left edge. Keep the
+-- expanded icon plate four pixels beyond it so the orange gradient never
+-- visually runs into the plate's border.
+local EXPANDED_ROW_LEFT_INSET = 12
 local COMPACT_ICON_INSET = 4
+-- Gap between a compact parent chevron and the dedicated scrollbar lane.
 local COMPACT_TOGGLE_INSET = 2
--- compact rail (collapsedWidth = 40) chevron: leftInset(4) + plate(20) +
--- gap(0) + chevron(14) + rightInset(2) = 40, so the chevron shrinks from the
--- expanded TOGGLE_SIZE (18) to 14 only while compact; the same pooled row's
--- toggle is resized back to TOGGLE_SIZE when the presentation returns to
--- expanded (see ApplyEntry)
+-- Compact parent content: leftInset(4) + plate(20) + chevron(14) + gap(2)
+-- = 40px, followed by the dedicated 10px scrollbar lane above. The chevron
+-- shrinks from the expanded TOGGLE_SIZE (18) to 14 only while compact; the
+-- same pooled row's toggle is resized back to TOGGLE_SIZE on expansion.
 local COMPACT_TOGGLE_SIZE = 14
 local ROW_ICON_ALPHA = 1
 local INDENT_PER_DEPTH = 22
@@ -38,6 +45,11 @@ local SCROLLBAR_FADE_DURATION = 0.18
 -- reserved space at the right edge of every row so content never sits under
 -- the transient scroll bar
 local ROW_RIGHT_INSET = SCROLLBAR_WIDTH + 4
+
+local function GetMinimumCollapsedWidth(iconSize)
+    return COMPACT_ICON_INSET + iconSize + COMPACT_TOGGLE_SIZE
+        + COMPACT_TOGGLE_INSET + SCROLLBAR_WIDTH
+end
 
 -- AF.AnimatedResize tracks its ticker on the frame; cancel it so a pending
 -- animation never keeps writing sizes after state has been reapplied
@@ -469,18 +481,55 @@ local function SetRowHovered(row, hovered)
     PaintRow(row.list, row)
 end
 
+local function HideRowTooltip(row)
+    local list = row.list
+    if list.tooltipOwner ~= row then return end
+
+    list.tooltipOwner = nil
+    -- The row's leave is deferred so moving onto its chevron does not flicker.
+    -- Do not let that deferred cleanup hide a newer tooltip owned by another
+    -- AF widget.
+    if AF.Tooltip and AF.Tooltip:GetOwner() == row.tooltipAnchor then
+        AF.HideTooltip()
+    end
+end
+
+local function ShowRowTooltip(row)
+    local entry = row.entry
+    if not entry or row.kind == "heading" then return end
+
+    local list = row.list
+    row.tooltipLines[1] = entry.label
+    list.tooltipOwner = row
+    AF.ShowTooltip(row.tooltipAnchor, "RIGHT", 4, 0, row.tooltipLines)
+end
+
 local function RefreshRowHover(row)
     C_Timer.After(0, function()
-        if not row.entry then return end
+        if not row.entry then
+            HideRowTooltip(row)
+            return
+        end
         local hovered = row:IsMouseOver()
             or row.toggle:IsShown() and row.toggle:IsMouseOver()
         SetRowHovered(row, hovered)
+        if not hovered then
+            HideRowTooltip(row)
+        end
     end)
 end
 
 local function CreateRow(list)
     local row = CreateFrame("Button", nil, list.scrollContent)
     row.list = list
+    row.tooltipLines = {}
+    -- Rows retain expandedWidth even in the compact rail and are clipped by
+    -- the scroll frame. Anchor the tooltip at the presentation's visible edge
+    -- instead of row.RIGHT, so compact-row tooltips appear beside the icon
+    -- rather than far into the bag content.
+    row.tooltipAnchor = CreateFrame("Frame", nil, row)
+    row.tooltipAnchor.accentColor = list.accentColor
+    AF.SetSize(row.tooltipAnchor, 1, 1)
     row:RegisterForClicks("LeftButtonUp")
 
     row.highlight = AF.CreateGradientTexture(
@@ -537,6 +586,7 @@ local function CreateRow(list)
     row:SetScript("OnClick", SelectFromClick)
     row:SetScript("OnEnter", function(self)
         SetRowHovered(self, true)
+        ShowRowTooltip(self)
         NotifyPointerEnter(list)
     end)
     row:SetScript("OnLeave", function(self)
@@ -548,6 +598,7 @@ local function CreateRow(list)
     end)
     row.toggle:SetScript("OnEnter", function(self)
         SetRowHovered(self.row, true)
+        ShowRowTooltip(self.row)
         NotifyPointerEnter(list)
     end)
     row.toggle:SetScript("OnLeave", function(self)
@@ -605,6 +656,7 @@ local function ApplyNodeIcon(list, iconRegion, icon)
 end
 
 local function ApplyEntry(list, row, entry)
+    HideRowTooltip(row)
     ResetRowForEntry(row, entry)
     row:SetAlpha(1)
     row.entry = entry
@@ -615,6 +667,14 @@ local function ApplyEntry(list, row, entry)
     row.label:ClearAllPoints()
     row.label:Show()
     row.toggle:EnableMouse(true)
+    row.tooltipAnchor:ClearAllPoints()
+    row.tooltipAnchor:SetPoint(
+        "LEFT",
+        row,
+        "LEFT",
+        list.compact and list.collapsedWidth or list.expandedWidth,
+        0
+    )
 
     if entry.kind == "heading" then
         row:EnableMouse(false)
@@ -632,17 +692,16 @@ local function ApplyEntry(list, row, entry)
     row.label:SetFontObject("AF_FONT_NORMAL")
     row.label:SetShown(not compact)
 
-    -- compact parent rows (hasChildren) keep the (shrunk) chevron beside the
-    -- icon: icon left-inset 4px, chevron right-inset 2px, the pair fitting
-    -- exactly inside collapsedWidth (4 + 20 icon + 14 chevron + 2 = 40; see
-    -- COMPACT_TOGGLE_SIZE's arithmetic comment). compact leaf rows stay
-    -- icon-only, centered in the full compact area.
+    -- Compact parent rows (hasChildren) keep the shrunken chevron immediately
+    -- beside the icon in the 40px content lane. The remaining 10px at the
+    -- right is reserved exclusively for the transient scrollbar. Compact leaf
+    -- rows stay icon-only, centered in their own content area.
     local leftInset
     if compact then
         leftInset = entry.hasChildren and COMPACT_ICON_INSET
             or ((list.compactIconAreaWidth - list.iconSize) / 2)
     else
-        leftInset = 8 + ((entry.depth or 0) * INDENT_PER_DEPTH)
+        leftInset = EXPANDED_ROW_LEFT_INSET + ((entry.depth or 0) * INDENT_PER_DEPTH)
     end
     local icon = entry.icon or compact and list.fallbackIcon
     if icon then
@@ -669,7 +728,7 @@ local function ApplyEntry(list, row, entry)
             -- strip rather than off past the row's full (always-
             -- expandedWidth) frame
             AF.SetSize(row.toggle, COMPACT_TOGGLE_SIZE, COMPACT_TOGGLE_SIZE)
-            row.toggle:SetPoint("LEFT", list.collapsedWidth - COMPACT_TOGGLE_SIZE - COMPACT_TOGGLE_INSET, 0)
+            row.toggle:SetPoint("LEFT", COMPACT_ICON_INSET + list.iconSize, 0)
         else
             -- restore the full expanded chevron size on this pooled row
             AF.SetSize(row.toggle, TOGGLE_SIZE, TOGGLE_SIZE)
@@ -713,6 +772,9 @@ local function ApplyModel(list)
         row.hovered = row:IsMouseOver()
             or row.toggle:IsShown() and row.toggle:IsMouseOver()
         PaintRow(list, row)
+        if row.hovered then
+            ShowRowTooltip(row)
+        end
         offset = row.layoutBottom + ROW_SPACING
     end
 
@@ -723,6 +785,7 @@ local function ApplyModel(list)
         row.id = nil
         row.kind = nil
         row.hovered = nil
+        HideRowTooltip(row)
         row:Hide()
     end
 
@@ -1082,7 +1145,7 @@ end
 ---@param parent Frame
 ---@param options? table
 --- - expandedWidth number full presentation width (default 170)
---- - collapsedWidth number compact presentation width, used to center icon-only rows (default 40)
+--- - collapsedWidth number compact presentation width, clamped to retain a dedicated scrollbar lane (default 50)
 --- - rowHeight number (default 28)
 --- - headingHeight number (default 22)
 --- - iconSize number (default 20)
@@ -1099,10 +1162,13 @@ function AF.CreateTreeList(parent, options)
     Mixin(list, AF_TreeListMixin)
 
     list.expandedWidth = options.expandedWidth or DEFAULT_EXPANDED_WIDTH
-    list.collapsedWidth = options.collapsedWidth or DEFAULT_COLLAPSED_WIDTH
     list.rowHeight = options.rowHeight or DEFAULT_ROW_HEIGHT
     list.headingHeight = options.headingHeight or DEFAULT_HEADING_HEIGHT
     list.iconSize = options.iconSize or DEFAULT_ICON_SIZE
+    list.collapsedWidth = max(
+        options.collapsedWidth or DEFAULT_COLLAPSED_WIDTH,
+        GetMinimumCollapsedWidth(list.iconSize)
+    )
     list.accentColor = options.accentColor or AF.GetAddonAccentColorName()
     list.fallbackIcon = options.fallbackIcon
     list.iconPlateColors = options.iconPlateColors
@@ -1115,6 +1181,7 @@ function AF.CreateTreeList(parent, options)
     list.visibleEntries = {}
     list.rows = {}
     list.activeRows = {}
+    list.tooltipOwner = nil
 
     local scrollFrame = CreateFrame("ScrollFrame", nil, list)
     list.scrollFrame = scrollFrame
@@ -1152,6 +1219,11 @@ function AF.CreateTreeList(parent, options)
         list.scrollBar:SetScroll(scrollFrame:GetVerticalScroll())
         list:EnsureSelectedRowVisible()
         list.scrollBar:Update()
+    end)
+    list:SetScript("OnHide", function()
+        if list.tooltipOwner then
+            HideRowTooltip(list.tooltipOwner)
+        end
     end)
 
     return list
@@ -1261,7 +1333,7 @@ end
 
 ---@param parent Frame
 ---@param options? table all AF.CreateTreeList options, plus:
---- - collapsedWidth number rail width while collapsed (default 40)
+--- - collapsedWidth number rail width while collapsed, clamped to retain a dedicated scrollbar lane (default 50)
 ---@return AF_SidebarRail rail
 function AF.CreateSidebarRail(parent, options)
     options = options or {}
@@ -1272,7 +1344,10 @@ function AF.CreateSidebarRail(parent, options)
     rail:EnableMouse(true)
 
     rail.expandedWidth = options.expandedWidth or DEFAULT_EXPANDED_WIDTH
-    rail.collapsedWidth = options.collapsedWidth or DEFAULT_COLLAPSED_WIDTH
+    rail.collapsedWidth = max(
+        options.collapsedWidth or DEFAULT_COLLAPSED_WIDTH,
+        GetMinimumCollapsedWidth(options.iconSize or DEFAULT_ICON_SIZE)
+    )
     rail.shown = true
     rail.collapsed = false
     rail.presentationWidth = rail.expandedWidth

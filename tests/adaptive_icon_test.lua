@@ -59,6 +59,26 @@ assertEqual(
     "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_IndividualBags.tga",
     "12.1 bag Texture raster path"
 )
+assertEqual(
+    AF.GetAdaptiveIcon("Bag_Bag"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Bag.tga",
+    "12.1 equipment-bag Texture raster path"
+)
+assertEqual(
+    AF.GetAdaptiveIcon("Bag_ProfessionTool"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_ProfessionTool.tga",
+    "12.1 profession-tool Texture raster path"
+)
+assertEqual(
+    AF.GetAdaptiveIcon("Bag_ProfessionEquipment"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_ProfessionEquipment.tga",
+    "12.1 profession-equipment Texture raster path"
+)
+assertEqual(
+    AF.GetAdaptiveIcon("Bag_Miscellaneous"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Miscellaneous.tga",
+    "12.1 miscellaneous Texture raster path"
+)
 
 local loadedPath
 local texture = {
@@ -138,6 +158,26 @@ assertEqual(
     rasterAF.GetAdaptiveIcon("Bag_IndividualBags"),
     "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_IndividualBags.tga",
     "12.0 bag Texture raster path"
+)
+assertEqual(
+    rasterAF.GetAdaptiveIcon("Bag_Bag"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Bag.tga",
+    "12.0 equipment-bag Texture raster path"
+)
+assertEqual(
+    rasterAF.GetAdaptiveIcon("Bag_ProfessionTool"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_ProfessionTool.tga",
+    "12.0 profession-tool Texture raster path"
+)
+assertEqual(
+    rasterAF.GetAdaptiveIcon("Bag_ProfessionEquipment"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_ProfessionEquipment.tga",
+    "12.0 profession-equipment Texture raster path"
+)
+assertEqual(
+    rasterAF.GetAdaptiveIcon("Bag_Miscellaneous"),
+    "Interface\\AddOns\\AbstractFramework\\Media\\Icons\\Bag_Miscellaneous.tga",
+    "12.0 miscellaneous Texture raster path"
 )
 
 print("adaptive icon tests passed")
