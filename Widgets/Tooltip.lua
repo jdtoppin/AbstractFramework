@@ -190,7 +190,9 @@ local AF_TooltipMixin = {}
 
 function AF_TooltipMixin:SetOwner(owner, ...)
     self:Hide()
-    self:SetParent(owner) -- update scale
+    -- Keep the tooltip under AF.UIParent. Its owner can be inside a
+    -- ScrollFrame's scroll child, and reparenting would make this top-level
+    -- overlay subject to that viewport's clipping.
     SetOwner(self, owner, ...)
     AF.ReBorder(self)
 end
@@ -300,8 +302,8 @@ function AF_TooltipMixin:SetupIcon(point, relativePoint, x, y)
         AF.ApplyDefaultTexCoord(icon)
         icon:Hide()
 
-        hooksecurefunc(self, "SetBackdropBorderColor", function(self, r, g, b)
-            self.iconBG:SetColorTexture(r, g, b)
+        hooksecurefunc(self, "SetBackdropBorderColor", function(tooltip, r, g, b)
+            tooltip.iconBG:SetColorTexture(r, g, b)
         end)
     end
 
