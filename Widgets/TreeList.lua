@@ -11,11 +11,11 @@ local pairs = pairs
 -- shared constants
 ---------------------------------------------------------------------
 local DEFAULT_EXPANDED_WIDTH = 170
--- 48px is the compact content lane: 12px inset + 20px icon + 14px chevron
--- + 2px gap. The same 12px inset clears the 7px orange hover strip in both
--- presentations. Reserve a separate 10px lane for the transient scrollbar, so
--- parent chevrons remain fully visible and clickable while the list scrolls.
-local DEFAULT_COLLAPSED_WIDTH = 58
+-- 34px is the compact content lane: 12px inset + 20px icon + 2px gap. The
+-- same 12px inset clears the 7px orange hover strip in both presentations.
+-- Reserve a separate 10px lane for the transient scrollbar, giving the
+-- compact rail a 44px default without letting the bar overlap its icons.
+local DEFAULT_COLLAPSED_WIDTH = 44
 local DEFAULT_ROW_HEIGHT = 28
 local DEFAULT_HEADING_HEIGHT = 22
 local DEFAULT_ICON_SIZE = 20
@@ -29,16 +29,13 @@ local TOGGLE_SIZE = 18
 -- visually runs into the plate's border.
 local EXPANDED_ROW_LEFT_INSET = 12
 -- Like EXPANDED_ROW_LEFT_INSET, keep compact plates past the 7px navigation
--- strip. This needs a 48px content lane once the compact parent chevron is
--- included (12 + 20 + 14 + 2).
+-- strip. Every compact row uses this same inset, so parent and leaf icons
+-- remain aligned in the narrower rail.
 local COMPACT_ICON_INSET = 12
--- Gap between a compact parent chevron and the dedicated scrollbar lane.
-local COMPACT_TOGGLE_INSET = 2
--- Compact parent content: leftInset(12) + plate(20) + chevron(14) + gap(2)
--- = 48px, followed by the dedicated 10px scrollbar lane above. The chevron
--- shrinks from the expanded TOGGLE_SIZE (18) to 14 only while compact; the
--- same pooled row's toggle is resized back to TOGGLE_SIZE on expansion.
-local COMPACT_TOGGLE_SIZE = 14
+-- Keep a small buffer between a compact icon plate and the dedicated
+-- scrollbar lane. The compact parent control is the row itself, not a second
+-- chevron target, so the rail can stay narrow without a clickable overlap.
+local COMPACT_ICON_RIGHT_GAP = 2
 local ROW_ICON_ALPHA = 1
 local INDENT_PER_DEPTH = 22
 local SCROLLBAR_WIDTH = 10
@@ -51,8 +48,8 @@ local SCROLLBAR_FADE_DURATION = 0.18
 local ROW_RIGHT_INSET = SCROLLBAR_WIDTH + 4
 
 local function GetMinimumCollapsedWidth(iconSize)
-    return COMPACT_ICON_INSET + iconSize + COMPACT_TOGGLE_SIZE
-        + COMPACT_TOGGLE_INSET + SCROLLBAR_WIDTH
+    return COMPACT_ICON_INSET + iconSize + COMPACT_ICON_RIGHT_GAP
+        + SCROLLBAR_WIDTH
 end
 
 -- AF.AnimatedResize tracks its ticker on the frame; cancel it so a pending
@@ -499,52 +496,41 @@ local function HideRowTooltip(row)
 end
 
 -- The tooltip owner must remain outside the scroll frame, otherwise the
--- GameTooltip it owns is clipped with the rows. In compact mode, however,
--- the owner should follow the visible control instead of the rail's far
--- edge. The row body follows its icon; the chevron gets its own target when
--- it is the current hover source. That keeps the title next to what the
--- pointer is actually over while preserving the non-clipping owner
--- relationship.
-local function PositionRowTooltipAnchor(list, row, compact, hoverTarget)
+-- GameTooltip it owns is clipped with the rows. Compact labels are hidden, so
+-- use one fixed anchor beside the row's icon. It is deliberately independent
+-- of the hover source: a parent expands through its row click in compact mode
+-- and has no separate compact chevron to move the tooltip target.
+local function PositionRowTooltipAnchor(list, row)
     row.tooltipAnchor:ClearAllPoints()
 
-    if compact then
-        local target
-        local hoverOnToggle = hoverTarget == row.toggle
-            or hoverTarget == nil
-                and row.toggle:IsShown()
-                and row.toggle:IsMouseOver()
-        if hoverOnToggle and row.toggle:IsShown() then
-            target = row.toggle
-        elseif row.iconPlate:IsShown() then
-            target = row.iconPlate
-        elseif row.toggle:IsShown() then
-            target = row.toggle
-        end
-        if target then
-            row.tooltipAnchor:SetPoint("LEFT", target, "RIGHT", 0, 0)
-            return
-        end
+    if list.compact and row.iconPlate:IsShown() then
+        row.tooltipAnchor:SetPoint("LEFT", row.iconPlate, "RIGHT", 0, 0)
+        return
     end
 
-    -- Headings and icon-less compact entries do not have a visible control to
-    -- follow. They never normally show a row tooltip, but retain a stable
-    -- visible-edge fallback for pooled-row safety.
+    -- Headings and icon-less compact entries never normally show a row title
+    -- tooltip, but retain a stable fallback for pooled-row safety.
     row.tooltipAnchor:SetPoint(
         "LEFT",
         row,
         "LEFT",
-        compact and list.collapsedWidth or list.expandedWidth,
+        list.compact and (COMPACT_ICON_INSET + list.iconSize) or list.expandedWidth,
         0
     )
 end
 
-local function ShowRowTooltip(row, hoverTarget)
+local function ShowRowTooltip(row)
     local entry = row.entry
     if not entry or row.kind == "heading" then return end
 
     local list = row.list
-    PositionRowTooltipAnchor(list, row, list.compact, hoverTarget)
+    -- Expanded rows already expose their labels. Tooltips are reserved for
+    -- compact icon-only rows, where they provide the otherwise hidden title.
+    if not list.compact then
+        HideRowTooltip(row)
+        return
+    end
+
     row.tooltipLines[1] = entry.label
     list.tooltipOwner = row
     AF.ShowTooltip(row.tooltipAnchor, "RIGHT", 4, 0, row.tooltipLines)
@@ -574,7 +560,7 @@ local function CreateRow(list)
     -- than the row: AF.Tooltip:SetOwner reparents the GameTooltip to its
     -- owner, and a row descendant would clip that tooltip inside scrollFrame.
     -- PositionRowTooltipAnchor keeps this non-scrolling owner aligned with
-    -- the row's visible compact icon or chevron.
+    -- the row's visible compact icon.
     row.tooltipAnchor = CreateFrame("Frame", nil, list)
     row.tooltipAnchor.accentColor = list.accentColor
     AF.SetSize(row.tooltipAnchor, 1, 1)
@@ -634,7 +620,7 @@ local function CreateRow(list)
     row:SetScript("OnClick", SelectFromClick)
     row:SetScript("OnEnter", function(self)
         SetRowHovered(self, true)
-        ShowRowTooltip(self, self)
+        ShowRowTooltip(self)
         NotifyPointerEnter(list)
     end)
     row:SetScript("OnLeave", function(self)
@@ -646,7 +632,6 @@ local function CreateRow(list)
     end)
     row.toggle:SetScript("OnEnter", function(self)
         SetRowHovered(self.row, true)
-        ShowRowTooltip(self.row, self)
         NotifyPointerEnter(list)
     end)
     row.toggle:SetScript("OnLeave", function(self)
@@ -714,7 +699,7 @@ local function ApplyEntry(list, row, entry)
     row.label:SetText(entry.label)
     row.label:ClearAllPoints()
     row.label:Show()
-    row.toggle:EnableMouse(true)
+    row.toggle:EnableMouse(false)
     if entry.kind == "heading" then
         row:EnableMouse(false)
         row.label:SetFontObject("AF_FONT_SMALL")
@@ -723,7 +708,7 @@ local function ApplyEntry(list, row, entry)
         row.label:SetShown(not list.compact)
         row.iconPlate:Hide()
         row.toggle:Hide()
-        PositionRowTooltipAnchor(list, row, list.compact)
+        PositionRowTooltipAnchor(list, row)
         return
     end
 
@@ -732,14 +717,12 @@ local function ApplyEntry(list, row, entry)
     row.label:SetFontObject("AF_FONT_NORMAL")
     row.label:SetShown(not compact)
 
-    -- Compact parent rows (hasChildren) keep the shrunken chevron immediately
-    -- beside the icon in the 48px content lane. The remaining 10px at the
-    -- right is reserved exclusively for the transient scrollbar. Compact leaf
-    -- rows stay icon-only, centered in their own content area.
+    -- Compact rows use the same icon position regardless of depth or branch
+    -- state. Parent expansion remains available on the row click itself, so a
+    -- second compact chevron is neither needed nor allowed to consume space.
     local leftInset
     if compact then
-        leftInset = entry.hasChildren and COMPACT_ICON_INSET
-            or ((list.compactIconAreaWidth - list.iconSize) / 2)
+        leftInset = COMPACT_ICON_INSET
     else
         leftInset = EXPANDED_ROW_LEFT_INSET + ((entry.depth or 0) * INDENT_PER_DEPTH)
     end
@@ -755,29 +738,16 @@ local function ApplyEntry(list, row, entry)
         row.label:SetPoint("LEFT", leftInset, 0)
     end
 
-    if entry.hasChildren then
+    if entry.hasChildren and not compact then
         row.toggle.icon:SetTexture(AF.GetIcon(
             list.expandedById[entry.id] and "ArrowDown1" or "ArrowRight1"
         ))
         row.toggle:ClearAllPoints()
-        if compact then
-            -- shrink to the compact chevron size (see COMPACT_TOGGLE_SIZE's
-            -- arithmetic comment above) and anchor from the row's LEFT
-            -- (which coincides with the viewport's left edge in both
-            -- presentations) so it lands inside the visible collapsedWidth
-            -- strip rather than off past the row's full (always-
-            -- expandedWidth) frame
-            AF.SetSize(row.toggle, COMPACT_TOGGLE_SIZE, COMPACT_TOGGLE_SIZE)
-            row.toggle:SetPoint("LEFT", COMPACT_ICON_INSET + list.iconSize, 0)
-        else
-            -- restore the full expanded chevron size on this pooled row
-            AF.SetSize(row.toggle, TOGGLE_SIZE, TOGGLE_SIZE)
-            row.toggle:SetPoint("RIGHT", -(SCROLLBAR_WIDTH + 2), 0)
-        end
+        AF.SetSize(row.toggle, TOGGLE_SIZE, TOGGLE_SIZE)
+        row.toggle:SetPoint("RIGHT", -(SCROLLBAR_WIDTH + 2), 0)
+        row.toggle:EnableMouse(true)
         row.toggle:Show()
-        if not compact then
-            row.label:SetPoint("RIGHT", row.toggle, "LEFT", -3, 0)
-        end
+        row.label:SetPoint("RIGHT", row.toggle, "LEFT", -3, 0)
     else
         row.toggle:Hide()
         if not compact then
@@ -785,7 +755,7 @@ local function ApplyEntry(list, row, entry)
         end
     end
 
-    PositionRowTooltipAnchor(list, row, compact)
+    PositionRowTooltipAnchor(list, row)
 end
 
 local function ApplyModel(list)
@@ -1187,7 +1157,7 @@ end
 ---@param parent Frame
 ---@param options? table
 --- - expandedWidth number full presentation width (default 170)
---- - collapsedWidth number compact presentation width, clamped to retain a dedicated scrollbar lane (default 58)
+--- - collapsedWidth number compact presentation width, clamped to retain a dedicated scrollbar lane (default 44)
 --- - rowHeight number (default 28)
 --- - headingHeight number (default 22)
 --- - iconSize number (default 20)
@@ -1214,8 +1184,6 @@ function AF.CreateTreeList(parent, options)
     list.accentColor = options.accentColor or AF.GetAddonAccentColorName()
     list.fallbackIcon = options.fallbackIcon
     list.iconPlateColors = options.iconPlateColors
-    list.compactIconAreaWidth = list.collapsedWidth - ROW_RIGHT_INSET
-
     list.compact = false
     list.model = {}
     list.entriesById = {}
@@ -1375,7 +1343,7 @@ end
 
 ---@param parent Frame
 ---@param options? table all AF.CreateTreeList options, plus:
---- - collapsedWidth number rail width while collapsed, clamped to retain a dedicated scrollbar lane (default 58)
+--- - collapsedWidth number rail width while collapsed, clamped to retain a dedicated scrollbar lane (default 44)
 ---@return AF_SidebarRail rail
 function AF.CreateSidebarRail(parent, options)
     options = options or {}

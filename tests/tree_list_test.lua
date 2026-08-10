@@ -659,7 +659,7 @@ do
     -- (a) collapse fires once, instantly (no animation ticker involved)
     assertEqual(rail:SetCollapsed(true), true, "collapse accepted, state changed")
     assertEqual(rail:GetCollapsed(), true, "GetCollapsed reports collapsed")
-    assertEqual(rail.width, 58, "rail width reserves a compact scrollbar lane")
+    assertEqual(rail.width, 44, "rail width reserves a compact scrollbar lane")
     assertEqual(list:IsCompact(), true, "tree list compact while collapsed")
     assertEqual(#changedCalls, 1, "callback fired once")
     assertEqual(changedCalls[1], true, "callback fired with true")
@@ -724,7 +724,7 @@ do
 
     -- rail collapse must not modify expandedById
     assertEqual(rail:SetCollapsed(true), true, "rail collapsed")
-    assertEqual(rail.width, 58, "rail width reserves a compact scrollbar lane")
+    assertEqual(rail.width, 44, "rail width reserves a compact scrollbar lane")
     assertEqual(list:IsCompact(), true, "compact after collapse")
     assertEqual(list.expandedById.equipment, true, "expandedById untouched by rail collapse")
     assertEqual(visibleIds(list), "heading,all,equipment,weapons,armor,consumables", "compact rail renders expanded children")
@@ -746,8 +746,9 @@ do
 end
 
 ---------------------------------------------------------------------
--- compact-mode chevrons: parent rows keep a clickable chevron beside the
--- icon; leaf rows stay icon-only; expanded-mode positioning is unchanged
+-- compact-mode layout: every row is icon-only, with parent expansion handled
+-- by its row click. The 44px rail preserves a left hover gap and a distinct
+-- scrollbar lane without leaving unnecessary space to the right of the icon.
 ---------------------------------------------------------------------
 do
     local parent = CreateFrame("Frame", "Parent")
@@ -772,49 +773,48 @@ do
 
     list:SetCompact(true)
 
-    -- leaf row ("all", no children): chevron stays hidden in compact mode
+    assertEqual(list.collapsedWidth, 44, "default compact rail is 44px")
+
+    -- Compact rows never show a secondary chevron. A parent expands through
+    -- its normal row click, matching the leaf's icon-only presentation.
     local allRow = findActiveRow(list, "all")
     assertEqual(allRow.toggle.shown, false, "compact leaf chevron hidden")
 
-    -- Parent row ("equipment", collapsed, has children): chevron shown beside
-    -- the icon in the 48px compact content lane. The remaining 10px (x=48..58)
-    -- is dedicated to the transient scrollbar, even while it is faded out.
     equipmentRow = findActiveRow(list, "equipment")
-    assertEqual(equipmentRow.toggle.shown, true, "compact parent chevron shown")
-    assertEqual(equipmentRow.toggle.mouseEnabled, true, "compact parent chevron clickable")
-    assertEqual(equipmentRow.toggle.width, 14, "compact chevron is reduced size (14px)")
-    assertEqual(equipmentRow.toggle.height, 14, "compact chevron is reduced size (14px)")
+    assertEqual(equipmentRow.toggle.shown, false, "compact parent chevron hidden")
+    assertEqual(equipmentRow.toggle.mouseEnabled, false, "hidden compact parent chevron is not interactive")
 
     local iconPoint = equipmentRow.iconPlate.points[#equipmentRow.iconPlate.points]
     assertEqual(iconPoint[2], 12,
         "compact parent icon plate clears the 7px hover navigation strip")
-    local togglePoint = equipmentRow.toggle.points[#equipmentRow.toggle.points]
-    assertEqual(togglePoint[1], "LEFT", "compact parent chevron anchored from row LEFT")
-    assertEqual(togglePoint[2], 32, "compact parent chevron follows the 20px icon plate")
+    assertEqual(iconPoint[2] + equipmentRow.iconPlate.width, 32,
+        "compact parent icon ends at x=32 before the scrollbar gap")
     allRow = findActiveRow(list, "all")
     local leafIconPoint = allRow.iconPlate.points[#allRow.iconPlate.points]
     assertEqual(leafIconPoint[2], 12,
-        "compact leaf icon also clears the 7px hover navigation strip")
+        "compact leaf icon aligns with the parent and clears the hover strip")
     list.scrollContent:SetHeight(600)
     list.scrollBar:Update()
     assertTrue(list.scrollBar.frame.shown, "overflow reveals the compact scrollbar")
     local scrollBarLeft = list.collapsedWidth - list.scrollBar.frame.width
-    assertEqual(scrollBarLeft, 48, "scrollbar starts after the 48px compact content lane")
-    assertTrue(togglePoint[2] + equipmentRow.toggle.width <= scrollBarLeft - 2,
-        "visible compact scrollbar leaves a gap after the chevron")
+    assertEqual(scrollBarLeft, 34, "scrollbar starts after the 34px compact icon lane")
+    assertTrue(iconPoint[2] + equipmentRow.iconPlate.width <= scrollBarLeft - 2,
+        "visible compact scrollbar leaves a 2px gap after the icon")
 
-    -- clicking the chevron toggles expansion without touching selection
+    -- Clicking the compact parent row retains normal selection semantics and
+    -- expands/collapses the branch, replacing the former compact chevron.
     assertEqual(list.expandedById.equipment, false, "starts collapsed")
-    assertEqual(list.selectionId, "all", "selection before chevron click")
-    equipmentRow.toggle.scripts.OnClick(equipmentRow.toggle)
-    assertEqual(list.expandedById.equipment, true, "chevron click expands")
-    assertEqual(list.selectionId, "all", "chevron click does not change selection")
-    assertEqual(visibleIds(list), "heading,all,equipment,weapons,armor,consumables,potions", "children visible after chevron expand")
+    assertEqual(list.selectionId, "all", "selection before compact parent click")
+    equipmentRow.scripts.OnClick(equipmentRow)
+    assertEqual(list.expandedById.equipment, true, "compact parent row click expands")
+    assertEqual(list.selectionId, "equipment", "compact parent row click selects the parent")
+    assertEqual(visibleIds(list), "heading,all,equipment,weapons,armor,consumables,potions", "children visible after compact parent expands")
 
     equipmentRow = findActiveRow(list, "equipment")
-    equipmentRow.toggle.scripts.OnClick(equipmentRow.toggle)
-    assertEqual(list.expandedById.equipment, false, "chevron click collapses again")
-    assertEqual(list.selectionId, "all", "selection still unchanged after collapse")
+    assertEqual(equipmentRow.toggle.shown, false, "parent remains icon-only after compact expand")
+    equipmentRow.scripts.OnClick(equipmentRow)
+    assertEqual(list.expandedById.equipment, false, "compact parent row click collapses again")
+    assertEqual(list.selectionId, "equipment", "selection remains on parent after compact collapse")
 
     -- returning to expanded mode restores the right-anchored, full-size chevron
     list:SetCompact(false)
@@ -827,8 +827,8 @@ do
 end
 
 ---------------------------------------------------------------------
--- row-title tooltips: visible labels and compact icon-only rows both use
--- the same pooled row tooltip, including the parent-row chevron hit target
+-- row-title tooltips are reserved for compact icon-only rows. Their anchor is
+-- fixed beside each icon so it never shifts with another hover target.
 ---------------------------------------------------------------------
 do
     local parent = CreateFrame("Frame", "Parent")
@@ -838,61 +838,42 @@ do
     list:SetModel(BuildModel())
 
     local equipmentRow = findActiveRow(list, "equipment")
+    local callsBeforeExpandedHover = #tooltipCalls
     equipmentRow.mouseOver = true
     equipmentRow.scripts.OnEnter(equipmentRow)
-    local tooltip = tooltipCalls[#tooltipCalls]
-    assertEqual(tooltip.kind, "show", "expanded row hover shows a title tooltip")
-    assertEqual(tooltip.widget, equipmentRow.tooltipAnchor,
-        "expanded tooltip uses the row's visible-edge anchor")
-    assertEqual(tooltip.widget.parent, list,
-        "tooltip anchor belongs to the non-scrolling tree list")
-    assertTrue(not isDescendantOf(tooltip.widget, list.scrollFrame),
-        "tooltip anchor is outside the scroll frame so the owned GameTooltip is not clipped")
-    assertEqual(tooltip.widget.points[1][2], equipmentRow,
-        "non-scrolling tooltip anchor remains positioned from its row")
-    assertEqual(tooltip.anchor, "RIGHT", "expanded tooltip opens beside the sidebar")
-    assertEqual(tooltip.lines[1], "Equipment", "expanded tooltip uses the row title")
-    assertEqual(equipmentRow.tooltipAnchor.accentColor, "accent",
-        "tooltip inherits the list accent color")
-    assertEqual(equipmentRow.tooltipAnchor.points[1][4], 170,
-        "expanded tooltip anchor follows the full row width")
+    assertEqual(#tooltipCalls, callsBeforeExpandedHover,
+        "expanded row hover does not duplicate an already visible label")
+    assertEqual(list.tooltipOwner, nil, "expanded row hover does not claim a tooltip")
 
-    -- Crossing from the row to its chevron must retain the same tooltip rather
-    -- than allowing the row's deferred leave to hide it.
+    -- Expanded chevrons also leave title tooltips disabled.
     equipmentRow.mouseOver = false
     equipmentRow.toggle.mouseOver = true
     equipmentRow.scripts.OnLeave(equipmentRow)
     equipmentRow.toggle.scripts.OnEnter(equipmentRow.toggle)
     drain()
-    assertEqual(tooltipCalls[#tooltipCalls].kind, "show", "chevron hover keeps the tooltip visible")
-    assertEqual(tooltipCalls[#tooltipCalls].widget, equipmentRow.tooltipAnchor,
-        "chevron tooltip remains anchored to the parent row")
+    assertEqual(#tooltipCalls, callsBeforeExpandedHover,
+        "expanded chevron hover also leaves title tooltips disabled")
 
     equipmentRow.toggle.mouseOver = false
     equipmentRow.toggle.scripts.OnLeave(equipmentRow.toggle)
     drain()
-    assertEqual(tooltipCalls[#tooltipCalls].kind, "hide", "leaving a row and chevron hides its tooltip")
-
-    -- The deferred leave must not erase a tooltip a different AF widget
-    -- showed after the pointer left this row.
-    equipmentRow.mouseOver = true
-    equipmentRow.scripts.OnEnter(equipmentRow)
-    equipmentRow.mouseOver = false
-    equipmentRow.scripts.OnLeave(equipmentRow)
-    local otherTooltipOwner = CreateFrame("Frame", "OtherTooltipOwner")
-    AF.ShowTooltip(otherTooltipOwner, "RIGHT", 0, 0, {"Other"})
-    drain()
-    assertEqual(AF.Tooltip:GetOwner(), otherTooltipOwner,
-        "deferred row cleanup preserves another widget's newer tooltip")
 
     list:SetCompact(true)
     equipmentRow = findActiveRow(list, "equipment")
     equipmentRow.mouseOver = true
     equipmentRow.scripts.OnEnter(equipmentRow)
-    tooltip = tooltipCalls[#tooltipCalls]
+    local tooltip = tooltipCalls[#tooltipCalls]
     assertEqual(tooltip.kind, "show", "compact icon row shows a title tooltip")
     assertEqual(tooltip.lines[1], "Equipment", "compact tooltip exposes the hidden row title")
     assertEqual(equipmentRow.label.shown, false, "compact fixture remains icon-only")
+    assertEqual(tooltip.widget, equipmentRow.tooltipAnchor,
+        "compact tooltip uses the pooled row anchor")
+    assertEqual(tooltip.widget.parent, list,
+        "tooltip anchor belongs to the non-scrolling tree list")
+    assertTrue(not isDescendantOf(tooltip.widget, list.scrollFrame),
+        "tooltip anchor is outside the scroll frame so the owned GameTooltip is not clipped")
+    assertEqual(equipmentRow.tooltipAnchor.accentColor, "accent",
+        "tooltip inherits the list accent color")
     assertEqual(equipmentRow.tooltipAnchor.points[1][2], equipmentRow.iconPlate,
         "compact parent tooltip follows its icon instead of the rail edge")
     assertEqual(equipmentRow.tooltipAnchor.points[1][3], "RIGHT",
@@ -900,12 +881,25 @@ do
     assertEqual(equipmentRow.tooltipAnchor.points[1][4], 0,
         "compact parent tooltip anchor adds no extra rail-width gap")
 
-    equipmentRow.mouseOver = false
+    -- Compact parents have no chevron, so no alternate hover target can move
+    -- the tooltip away from this icon anchor.
+    assertEqual(equipmentRow.toggle.shown, false, "compact parent has no tooltip-moving chevron")
     equipmentRow.toggle.mouseOver = true
     equipmentRow.toggle.scripts.OnEnter(equipmentRow.toggle)
-    assertEqual(equipmentRow.tooltipAnchor.points[1][2], equipmentRow.toggle,
-        "compact chevron hover moves the tooltip next to the chevron target")
+    assertEqual(equipmentRow.tooltipAnchor.points[1][2], equipmentRow.iconPlate,
+        "compact parent tooltip remains beside the icon")
     equipmentRow.toggle.mouseOver = false
+
+    -- The deferred leave must not erase a tooltip a different AF widget
+    -- showed after the pointer left this compact row.
+    equipmentRow.mouseOver = false
+    equipmentRow.scripts.OnLeave(equipmentRow)
+    local otherTooltipOwner = CreateFrame("Frame", "OtherTooltipOwner")
+    AF.ShowTooltip(otherTooltipOwner, "RIGHT", 0, 0, {"Other"})
+    drain()
+    assertEqual(AF.Tooltip:GetOwner(), otherTooltipOwner,
+        "deferred row cleanup preserves another widget's newer tooltip")
+    AF.HideTooltip()
 
     local compactAllRow = findActiveRow(list, "all")
     compactAllRow.mouseOver = true
