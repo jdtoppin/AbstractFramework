@@ -548,6 +548,26 @@ do
 end
 
 ---------------------------------------------------------------------
+-- compact fallbacks can use the same native texture-table shape as an
+-- explicit model icon; consumers are not limited to AF adaptive glyphs
+---------------------------------------------------------------------
+do
+    local parent = CreateFrame("Frame", "Parent")
+    local nativeFallback = {texture = "Interface\\Icons\\INV_Misc_Gear_01"}
+    local list = AF.CreateTreeList(parent, {fallbackIcon = nativeFallback})
+    list.scrollFrame:SetHeight(300)
+    list.scrollBar.frame:SetHeight(300)
+    list:SetModel({{id = "fallback", label = "Fallback"}})
+    list:SetCompact(true)
+
+    local row = findActiveRow(list, "fallback")
+    assertEqual(row.icon.texture, nativeFallback.texture,
+        "compact fallback texture table uses the native texture path")
+    assertEqual(row.icon.texCoord[1], 0.08,
+        "native compact fallback uses the standard stock-icon crop")
+end
+
+---------------------------------------------------------------------
 -- icon plate colors: default to AF's lightweight-backdrop defaults (nil
 -- passed through, letting AF.ApplyLightweightBackdropWithColors apply its
 -- own "background"/"border" defaults); explicit iconPlateColors passed
@@ -873,8 +893,31 @@ do
     assertEqual(tooltip.kind, "show", "compact icon row shows a title tooltip")
     assertEqual(tooltip.lines[1], "Equipment", "compact tooltip exposes the hidden row title")
     assertEqual(equipmentRow.label.shown, false, "compact fixture remains icon-only")
-    assertEqual(equipmentRow.tooltipAnchor.points[1][4], 58,
-        "compact tooltip anchor follows the clipped rail instead of expanded row width")
+    assertEqual(equipmentRow.tooltipAnchor.points[1][2], equipmentRow.iconPlate,
+        "compact parent tooltip follows its icon instead of the rail edge")
+    assertEqual(equipmentRow.tooltipAnchor.points[1][3], "RIGHT",
+        "compact parent tooltip opens immediately after its icon target")
+    assertEqual(equipmentRow.tooltipAnchor.points[1][4], 0,
+        "compact parent tooltip anchor adds no extra rail-width gap")
+
+    equipmentRow.mouseOver = false
+    equipmentRow.toggle.mouseOver = true
+    equipmentRow.toggle.scripts.OnEnter(equipmentRow.toggle)
+    assertEqual(equipmentRow.tooltipAnchor.points[1][2], equipmentRow.toggle,
+        "compact chevron hover moves the tooltip next to the chevron target")
+    equipmentRow.toggle.mouseOver = false
+
+    local compactAllRow = findActiveRow(list, "all")
+    compactAllRow.mouseOver = true
+    compactAllRow.scripts.OnEnter(compactAllRow)
+    tooltip = tooltipCalls[#tooltipCalls]
+    assertEqual(tooltip.lines[1], "All", "compact leaf tooltip exposes its hidden row title")
+    assertEqual(compactAllRow.tooltipAnchor.points[1][2], compactAllRow.iconPlate,
+        "compact leaf tooltip follows the icon instead of the rail edge")
+    assertEqual(compactAllRow.tooltipAnchor.points[1][3], "RIGHT",
+        "compact leaf tooltip opens immediately after its icon target")
+    assertEqual(compactAllRow.tooltipAnchor.points[1][4], 0,
+        "compact leaf tooltip anchor adds no extra rail-width gap")
 
     -- A pooled row can be rebound or removed while its tooltip is visible.
     -- It must release its ownership so a former row title never survives a
@@ -882,9 +925,9 @@ do
     list:SetModel({{id = "all", label = "All", icon = "Bag_All"}})
     assertEqual(tooltipCalls[#tooltipCalls].kind, "hide", "model rebuild clears a stale pooled-row tooltip")
 
-    local allRow = findActiveRow(list, "all")
-    allRow.mouseOver = true
-    allRow.scripts.OnEnter(allRow)
+    local reboundAllRow = findActiveRow(list, "all")
+    reboundAllRow.mouseOver = true
+    reboundAllRow.scripts.OnEnter(reboundAllRow)
     list:Hide()
     assertEqual(tooltipCalls[#tooltipCalls].kind, "hide", "hiding the list clears its row tooltip")
 end

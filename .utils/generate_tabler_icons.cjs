@@ -51,11 +51,9 @@ if (!CHECK_ONLY) {
 
 const ICONS = {
     Bag_All: "apps",
-    Bag_Bag: "backpack",
     Bag_Empty: "box-off",
     Bag_IndividualBags: "briefcase",
     Bag_Misc: "package",
-    Bag_ProfessionEquipment: "shirt",
     Bag_ProfessionTool: "tools",
     Housing_Accents: "pillow",
     Housing_All: "apps",

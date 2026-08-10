@@ -498,11 +498,53 @@ local function HideRowTooltip(row)
     end
 end
 
-local function ShowRowTooltip(row)
+-- The tooltip owner must remain outside the scroll frame, otherwise the
+-- GameTooltip it owns is clipped with the rows. In compact mode, however,
+-- the owner should follow the visible control instead of the rail's far
+-- edge. The row body follows its icon; the chevron gets its own target when
+-- it is the current hover source. That keeps the title next to what the
+-- pointer is actually over while preserving the non-clipping owner
+-- relationship.
+local function PositionRowTooltipAnchor(list, row, compact, hoverTarget)
+    row.tooltipAnchor:ClearAllPoints()
+
+    if compact then
+        local target
+        local hoverOnToggle = hoverTarget == row.toggle
+            or hoverTarget == nil
+                and row.toggle:IsShown()
+                and row.toggle:IsMouseOver()
+        if hoverOnToggle and row.toggle:IsShown() then
+            target = row.toggle
+        elseif row.iconPlate:IsShown() then
+            target = row.iconPlate
+        elseif row.toggle:IsShown() then
+            target = row.toggle
+        end
+        if target then
+            row.tooltipAnchor:SetPoint("LEFT", target, "RIGHT", 0, 0)
+            return
+        end
+    end
+
+    -- Headings and icon-less compact entries do not have a visible control to
+    -- follow. They never normally show a row tooltip, but retain a stable
+    -- visible-edge fallback for pooled-row safety.
+    row.tooltipAnchor:SetPoint(
+        "LEFT",
+        row,
+        "LEFT",
+        compact and list.collapsedWidth or list.expandedWidth,
+        0
+    )
+end
+
+local function ShowRowTooltip(row, hoverTarget)
     local entry = row.entry
     if not entry or row.kind == "heading" then return end
 
     local list = row.list
+    PositionRowTooltipAnchor(list, row, list.compact, hoverTarget)
     row.tooltipLines[1] = entry.label
     list.tooltipOwner = row
     AF.ShowTooltip(row.tooltipAnchor, "RIGHT", 4, 0, row.tooltipLines)
@@ -528,12 +570,11 @@ local function CreateRow(list)
     row.list = list
     row.tooltipLines = {}
     -- Rows retain expandedWidth even in the compact rail and are clipped by
-    -- the scroll frame. Anchor the tooltip at the presentation's visible edge
-    -- instead of row.RIGHT, so compact-row tooltips appear beside the icon
-    -- rather than far into the bag content. The anchor itself must live on
-    -- the tree list rather than the row: AF.Tooltip:SetOwner reparents the
-    -- GameTooltip to its owner, and a row descendant would clip that tooltip
-    -- inside scrollFrame. Its point below still follows the row vertically.
+    -- the scroll frame. The anchor itself must live on the tree list rather
+    -- than the row: AF.Tooltip:SetOwner reparents the GameTooltip to its
+    -- owner, and a row descendant would clip that tooltip inside scrollFrame.
+    -- PositionRowTooltipAnchor keeps this non-scrolling owner aligned with
+    -- the row's visible compact icon or chevron.
     row.tooltipAnchor = CreateFrame("Frame", nil, list)
     row.tooltipAnchor.accentColor = list.accentColor
     AF.SetSize(row.tooltipAnchor, 1, 1)
@@ -593,7 +634,7 @@ local function CreateRow(list)
     row:SetScript("OnClick", SelectFromClick)
     row:SetScript("OnEnter", function(self)
         SetRowHovered(self, true)
-        ShowRowTooltip(self)
+        ShowRowTooltip(self, self)
         NotifyPointerEnter(list)
     end)
     row:SetScript("OnLeave", function(self)
@@ -605,7 +646,7 @@ local function CreateRow(list)
     end)
     row.toggle:SetScript("OnEnter", function(self)
         SetRowHovered(self.row, true)
-        ShowRowTooltip(self.row)
+        ShowRowTooltip(self.row, self)
         NotifyPointerEnter(list)
     end)
     row.toggle:SetScript("OnLeave", function(self)
@@ -674,15 +715,6 @@ local function ApplyEntry(list, row, entry)
     row.label:ClearAllPoints()
     row.label:Show()
     row.toggle:EnableMouse(true)
-    row.tooltipAnchor:ClearAllPoints()
-    row.tooltipAnchor:SetPoint(
-        "LEFT",
-        row,
-        "LEFT",
-        list.compact and list.collapsedWidth or list.expandedWidth,
-        0
-    )
-
     if entry.kind == "heading" then
         row:EnableMouse(false)
         row.label:SetFontObject("AF_FONT_SMALL")
@@ -691,6 +723,7 @@ local function ApplyEntry(list, row, entry)
         row.label:SetShown(not list.compact)
         row.iconPlate:Hide()
         row.toggle:Hide()
+        PositionRowTooltipAnchor(list, row, list.compact)
         return
     end
 
@@ -751,6 +784,8 @@ local function ApplyEntry(list, row, entry)
             row.label:SetPoint("RIGHT", -ROW_RIGHT_INSET, 0)
         end
     end
+
+    PositionRowTooltipAnchor(list, row, compact)
 end
 
 local function ApplyModel(list)
@@ -1157,7 +1192,7 @@ end
 --- - headingHeight number (default 22)
 --- - iconSize number (default 20)
 --- - accentColor string color name for highlight/thumb (default AF.GetAddonAccentColorName())
---- - fallbackIcon string|nil adaptive icon for icon-less rows in compact mode (default nil)
+--- - fallbackIcon string|{atlas?: string, texture?: string}|nil icon for icon-less rows in compact mode (default nil)
 --- - iconPlateColors {border={r,g,b,a}, fill={r,g,b,a}}|nil colors for each row's
 ---   icon plate (AF's lightweight one-fill/four-edge backdrop); defaults to
 ---   AF.ApplyLightweightBackdropWithColors' own "background"/"border" defaults (default nil)
