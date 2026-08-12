@@ -10,7 +10,7 @@ local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
 local STATUS_BAR_IMMEDIATE = Enum.StatusBarInterpolation.Immediate
 local STATUS_BAR_ELAPSED_TIME = Enum.StatusBarTimerDirection.ElapsedTime
 
--- Retail 12.1.0.68914 (wow-ui-source d3915c78) marks every general
+-- Retail 12.1.0.69273 (wow-ui-source eb941aad) marks every general
 -- unit-aura enumeration and instance-ID API RequiresUnitAuraAccess with
 -- FailureMode=Error. This is a static client boundary, not a combat or
 -- secrecy probe: live Retail 12.1 rows must use AuraContainers, and an
