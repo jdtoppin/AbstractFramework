@@ -30,8 +30,9 @@ local UnitInSamePhase
 if AF.isRetail then
     UnitInSamePhase = function(unit)
         local reason = UnitPhaseReason(unit)
-        -- PTR 7 makes the phase reason secret with unit identity. Unknown
-        -- phase state must fail closed instead of being inspected in Lua.
+        -- Retail 12.1.0.69273 (wow-ui-source eb941aad) makes the phase reason
+        -- secret with unit identity. Unknown phase state must fail closed
+        -- instead of being inspected in Lua.
         return F.isValueNonSecret(reason) and not reason
     end
 else

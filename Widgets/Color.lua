@@ -509,7 +509,8 @@ function AF.GetClassColor(class, alpha, factor)
     factor = factor or 1
 
     -- Accept callers that use UnitClass directly, but never inspect a class
-    -- value whose identity is secret on Retail 12.1 PTR 7.
+    -- value whose identity is secret on Retail 12.1.0.69273
+    -- (wow-ui-source eb941aad).
     if not F.isValueNonSecret(class) then
         return AF.GetColorRGB("UNKNOWN", alpha, factor)
     end

@@ -94,10 +94,11 @@ local function IsSemanticCaster(unit)
 end
 
 local function GetSemanticColor(config, unit)
-    -- PTR 7 makes UnitClass secret with unit identity; AF.UnitClassBase rejects
-    -- that value before it reaches class/color selection. Guard every other
-    -- inspected result so a future restriction likewise falls through to the
-    -- next static category without creating a separate combat path.
+    -- Retail 12.1.0.69273 (wow-ui-source eb941aad) makes UnitClass secret with
+    -- unit identity; AF.UnitClassBase rejects that value before it reaches
+    -- class/color selection. Guard every other inspected result so a future
+    -- restriction likewise falls through to the next static category without
+    -- creating a separate combat path.
     local rgb = GetEnabledSemanticColor(config, "boss")
     if rgb and IsSemanticBoss(unit) then
         return AF.UnpackColor(rgb)
