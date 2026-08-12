@@ -1,12 +1,13 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
+local F = AF.funcs
 
 -- Interface\SharedXML\PixelUtil.lua
 ---------------------------------------------------------------------
 -- pixel perfect
 ---------------------------------------------------------------------
 function AF.GetPixelFactor()
-    local physicalWidth, physicalHeight = GetPhysicalScreenSize()
+    local physicalHeight = select(2, GetPhysicalScreenSize())
     return 768.0 / physicalHeight
 end
 
@@ -691,16 +692,16 @@ function AF.AddToPixelUpdater_OnShow(r, target, fn, combatSafeOnly)
             end
             lastOnShows[self] = lastPixelUpdateTime
 
-            local components = onShowComponents[self]
-            if type(components) == "table" then
-                for region in next, components do
+            local regions = onShowComponents[self]
+            if type(regions) == "table" then
+                for region in next, regions do
                     if region._pixelUpdateCombatSafeOnly and InCombatLockdown() then
                         queue:push(region)
                     else
                         region:UpdatePixels()
                     end
                 end
-            elseif components then
+            elseif regions then
                 if self._pixelUpdateCombatSafeOnly and InCombatLockdown() then
                     queue:push(self)
                 else
@@ -1158,29 +1159,106 @@ end
 ---------------------------------------------------------------------
 -- load position
 ---------------------------------------------------------------------
+local validAnchorPoints = {
+    BOTTOM = true,
+    BOTTOMLEFT = true,
+    BOTTOMRIGHT = true,
+    CENTER = true,
+    LEFT = true,
+    RIGHT = true,
+    TOP = true,
+    TOPLEFT = true,
+    TOPRIGHT = true,
+}
+
+local function IsOrdinaryAnchorPoint(value)
+    return F.isValueNonSecret(value)
+        and type(value) == "string"
+        and validAnchorPoints[value] == true
+end
+
+local function IsOrdinaryOffset(value)
+    return F.isValueNonSecret(value)
+        and type(value) == "number"
+        and value == value
+        and value ~= math.huge
+        and value ~= -math.huge
+end
+
+local function NormalizePositionTable(pos)
+    local point, value2, value3, value4, value5 =
+        pos[1], pos[2], pos[3], pos[4], pos[5]
+
+    if not F.isValueNonSecret(value4)
+        or not F.isValueNonSecret(value5)
+        or value5 ~= nil
+        or not IsOrdinaryAnchorPoint(point)
+    then
+        return
+    end
+
+    if value4 == nil then
+        if IsOrdinaryOffset(value2) and IsOrdinaryOffset(value3) then
+            return point, point, value2, value3
+        end
+        return
+    end
+
+    if IsOrdinaryAnchorPoint(value2)
+        and IsOrdinaryOffset(value3)
+        and IsOrdinaryOffset(value4)
+    then
+        return point, value2, value3, value4
+    end
+end
+
+local function NormalizePositionString(pos)
+    pos = pos:gsub(" ", "")
+    local valueCount = select("#", strsplit(",", pos))
+    if valueCount ~= 3 and valueCount ~= 4 then return end
+
+    local point, value2, value3, value4 = strsplit(",", pos)
+    if not IsOrdinaryAnchorPoint(point) then return end
+
+    if valueCount == 3 then
+        local x, y = tonumber(value2), tonumber(value3)
+        if IsOrdinaryOffset(x) and IsOrdinaryOffset(y) then
+            return point, point, x, y
+        end
+        return
+    end
+
+    local x, y = tonumber(value3), tonumber(value4)
+    if IsOrdinaryAnchorPoint(value2)
+        and IsOrdinaryOffset(x)
+        and IsOrdinaryOffset(y)
+    then
+        return point, value2, x, y
+    end
+end
+
 ---@param region Frame
 ---@param pos table|string {point, x, y} | {point, relativePoint, x, y} | "point,x,y" | "point,relativePoint,x,y"
+---@return boolean loaded
 function AF.LoadPosition(region, pos, relativeTo)
-    region._useOriginalPoints = true
+    if not F.isValueNonSecret(pos) then return false end
+
+    local point, relativePoint, x, y
+    if type(pos) == "string" then
+        if pos == "" then return false end
+        point, relativePoint, x, y = NormalizePositionString(pos)
+    elseif type(pos) == "table" then
+        point, relativePoint, x, y = NormalizePositionTable(pos)
+    end
+
+    if not point then return false end
+    if not F.isValueNonSecret(relativeTo) then return false end
     relativeTo = relativeTo or region:GetParent()
 
-    if type(pos) == "string" then
-        if AF.IsBlank(pos) then return end
-        AF.ClearPoints(region)
-        pos = pos:gsub(" ", "")
-
-        local point, v2, v3, v4 = strsplit(",", pos)
-        if v4 then
-            AF.SetPoint(region, point, relativeTo, v2, tonumber(v3), tonumber(v4))
-        else
-            AF.SetPoint(region, point, relativeTo, tonumber(v2), tonumber(v3))
-        end
-
-    elseif type(pos) == "table" then
-        if AF.IsEmpty(pos) then return end
-        AF.ClearPoints(region)
-        AF.SetPoint(region, pos[1], relativeTo, pos[2], pos[3], pos[4])
-    end
+    region._useOriginalPoints = true
+    AF.ClearPoints(region)
+    AF.SetPoint(region, point, relativeTo, relativePoint, x, y)
+    return true
 end
 
 ---------------------------------------------------------------------
