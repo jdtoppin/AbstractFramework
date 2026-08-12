@@ -1,3 +1,7 @@
+r39:
+
+- Register only the selected graphical duration carrier on each Retail 12.1 native AuraButton, preventing Blizzard's circular swipe from appearing alongside vertical and Block styles.
+
 r38:
 
 - Fail closed on secret unit class and phase identity before values reach Lua branching, table lookup, or colour selection.
