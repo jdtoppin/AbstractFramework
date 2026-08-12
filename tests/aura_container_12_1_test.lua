@@ -45,6 +45,55 @@ local function record(calls, name, ...)
     }
 end
 
+local function assertScalarSnapshot(snapshot, message)
+    for field, value in pairs(snapshot) do
+        local valueType = type(value)
+        assert(
+            valueType == "number" or valueType == "boolean" or valueType == "string",
+            ("%s.%s is not scalar"):format(message, field)
+        )
+    end
+end
+
+local function assertSnapshotEqual(actual, expected, message)
+    for field, value in pairs(expected) do
+        assertEqual(actual[field], value, message .. "." .. field)
+    end
+    for field, value in pairs(actual) do
+        assertEqual(value, expected[field], message .. "." .. field)
+    end
+end
+
+local function expectedConstructionTotals(overrides)
+    local expected = {
+        containerCreateAttempts = 0,
+        containerAllocations = 0,
+        containerCreateCompletions = 0,
+        trackedContainers = 0,
+        externalContainersObserved = 0,
+        groupAddAttempts = 0,
+        groupsAdded = 0,
+        slotAddAttempts = 0,
+        slotsAdded = 0,
+        itemEnchantmentAddAttempts = 0,
+        itemEnchantmentsAdded = 0,
+        initialFrameReservationsAttempted = 0,
+        initialFrameReservationsCompleted = 0,
+    }
+    for field, value in pairs(overrides or {}) do
+        expected[field] = value
+    end
+    return expected
+end
+
+local function expectedConstructionStats(createdByAbstractFramework, overrides)
+    local expected = expectedConstructionTotals(overrides)
+    expected.trackedContainers = nil
+    expected.externalContainersObserved = nil
+    expected.createdByAbstractFramework = createdByAbstractFramework
+    return expected
+end
+
 local function makeRegion(button)
     local region = {}
 
@@ -160,6 +209,16 @@ local function makeButton()
         style()
     end
 
+    function button:ClearAllPoints()
+        style()
+        button.point = nil
+    end
+
+    function button:SetPoint(...)
+        style()
+        button.point = pack(...)
+    end
+
     function button:CreateTexture()
         style()
         return makeRegion(button)
@@ -217,10 +276,15 @@ local function makeContainer(state)
     local container = {
         buttons = {},
         calls = {},
+        failNextCall = nil,
     }
 
     local function call(name, ...)
         record(container.calls, name, ...)
+        if container.failNextCall == name then
+            container.failNextCall = nil
+            error("forced " .. name .. " failure", 2)
+        end
     end
 
     local function initialize(options)
@@ -235,6 +299,10 @@ local function makeContainer(state)
 
     function container:SetSize(...)
         call("SetSize", ...)
+        if state.failNextContainerSetSize then
+            state.failNextContainerSetSize = nil
+            error("forced SetSize construction failure", 2)
+        end
     end
 
     function container:SetUnit(...)
@@ -343,6 +411,8 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
     local state = {
         bindings = {},
         containers = {},
+        auraDataProviderSwitchCalls = 0,
+        auraDataProviderResetCalls = 0,
     }
     local environment = {}
     setmetatable(environment, {__index = _G})
@@ -359,6 +429,14 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
         GetAuraDuration = forbiddenAuraEnumeration,
         GetUnitAuraInstanceIDs = forbiddenAuraEnumeration,
         IsAuraFilteredOutByInstanceID = forbiddenAuraEnumeration,
+        SwitchAuraDataProvider = function()
+            state.auraDataProviderSwitchCalls = state.auraDataProviderSwitchCalls + 1
+            error("adapter must not own the native aura data provider", 2)
+        end,
+        ResetAuraDataProvider = function()
+            state.auraDataProviderResetCalls = state.auraDataProviderResetCalls + 1
+            error("adapter must not own the native aura data provider", 2)
+        end,
     }
     environment.C_StringUtil = {
         CreateNumericRuleFormatter = function()
@@ -473,6 +551,10 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
     else
         environment.CreateFrame = function(frameType)
             if frameType == "AuraContainer" then
+                if state.failNextAuraContainerCreation then
+                    state.failNextAuraContainerCreation = nil
+                    error("forced AuraContainer allocation failure", 2)
+                end
                 local container = makeContainer(state)
                 state.containers[#state.containers + 1] = container
                 return container
@@ -523,15 +605,76 @@ end
 
 local legacyFramework = loadAuraModule(false, true)
 assertEqual(legacyFramework.HasCustomAuraContainer(), false, "legacy schema capability")
+assertSnapshotEqual(
+    legacyFramework.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals(),
+    "legacy construction totals"
+)
 
 local AF, state, api = loadAuraModule(true, false)
 assertEqual(AF.HasCustomAuraContainer(), true, "current schema capability")
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals(),
+    "initial construction totals"
+)
+
+local unknownContainer = {}
+assertEqual(
+    AF.GetCustomAuraContainerConstructionStats(unknownContainer),
+    nil,
+    "unknown container stats"
+)
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals(),
+    "unknown lookup must not register"
+)
 
 local parent = {}
 local container = AF.CreateCustomAuraContainer(parent, "AFTestAuraContainer")
 assertEqual(state.containers[1], container, "created container")
 assertCall(container.calls[1], "SetSize", 1, 1)
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals({
+        containerCreateAttempts = 1,
+        containerAllocations = 1,
+        containerCreateCompletions = 1,
+        trackedContainers = 1,
+    }),
+    "created container totals"
+)
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionStats(container),
+    expectedConstructionStats(true, {
+        containerCreateAttempts = 1,
+        containerAllocations = 1,
+        containerCreateCompletions = 1,
+    }),
+    "created container stats"
+)
 
+local mutableTotals = AF.GetCustomAuraContainerConstructionTotals()
+local mutableStats = AF.GetCustomAuraContainerConstructionStats(container)
+assertScalarSnapshot(mutableTotals, "construction totals")
+assertScalarSnapshot(mutableStats, "container construction stats")
+mutableTotals.containerAllocations = 900
+mutableTotals.injected = {}
+mutableStats.groupsAdded = 900
+mutableStats.injected = {}
+assertEqual(
+    AF.GetCustomAuraContainerConstructionTotals().containerAllocations,
+    1,
+    "global snapshot mutation"
+)
+assertEqual(
+    AF.GetCustomAuraContainerConstructionStats(container).groupsAdded,
+    0,
+    "container snapshot mutation"
+)
+
+local beforeContainerTuning = AF.GetCustomAuraContainerConstructionTotals()
 AF.SetCustomAuraContainerFlowLayout(container, {
     axis = 1,
     anchorPoint = "BOTTOMRIGHT",
@@ -554,6 +697,11 @@ AF.SetCustomAuraContainerProcessingPolicy(
 )
 assertCall(findCall(container.calls, "SetAuraProcessingPolicy"), "SetAuraProcessingPolicy",
     api.CustomAuraContainerAuraProcessingPolicy.ProcessAura, processingOptions)
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionTotals(),
+    beforeContainerTuning,
+    "container tuning must not grow construction"
+)
 
 local groupOptions = {
     maxFrameCount = 4,
@@ -600,6 +748,34 @@ assert(copiedGroupOptions ~= groupOptions, "group options were not copied")
 assert(copiedGroupOptions.candidateFilters ~= groupOptions.candidateFilters, "nested group options were not copied")
 assertEqual(groupOptions.initializeFrame, nil, "caller group options mutated")
 assertEqual(buttonStyle.dispelColorCurve, nil, "caller button style mutated")
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals({
+        containerCreateAttempts = 1,
+        containerAllocations = 1,
+        containerCreateCompletions = 1,
+        trackedContainers = 1,
+        groupAddAttempts = 1,
+        groupsAdded = 1,
+        initialFrameReservationsAttempted = 10,
+        initialFrameReservationsCompleted = 10,
+    }),
+    "group construction totals"
+)
+
+local beforeDeferredInitializers = AF.GetCustomAuraContainerConstructionTotals()
+for _index = 1, 2 do
+    local deferredButton = makeButton()
+    state.activeButton = deferredButton
+    copiedGroupOptions.initializeFrame(deferredButton)
+    state.activeButton = nil
+    deferredButton.denied = true
+end
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionTotals(),
+    beforeDeferredInitializers,
+    "deferred initializer calls must not grow construction"
+)
 
 local firstButton = container.buttons[1]
 assert(firstButton.firstBindingSequence > firstButton.lastRegionStyleSequence,
@@ -643,6 +819,7 @@ assertCall(durationBinding.calls[4], "SetUpdateInterval", 0)
 
 local candidateFilters = {includeDispelTypes = {Magic = true}}
 local groupLayout = {elementSpacing = 3, forceNewLine = true}
+local beforeGroupTuning = AF.GetCustomAuraContainerConstructionTotals()
 AF.SetCustomAuraGroupFilterString(container, "helpful", "HELPFUL|PLAYER")
 AF.SetCustomAuraGroupMaxFrameCount(container, "helpful", 6)
 AF.SetCustomAuraGroupCandidateFilters(container, "helpful", candidateFilters)
@@ -661,10 +838,50 @@ assertCall(findCall(container.calls, "SetAuraGroupCandidateFilters"),
 assertCall(findCall(container.calls, "SetAuraGroupSortMethod"), "SetAuraGroupSortMethod",
     "helpful", api.AuraContainerSortMethod.Default, api.AuraContainerSortDirection.Reverse)
 assertCall(findCall(container.calls, "SetAuraGroupLayout"), "SetAuraGroupLayout", "helpful", groupLayout)
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionTotals(),
+    beforeGroupTuning,
+    "group tuning must not grow construction"
+)
 
-local slotOptions = {candidateFilters = {isBossAura = true}}
+local slotAnchorTarget = {}
+local slotOptions = {
+    candidateFilters = {isBossAura = true},
+    anchor = {
+        point = "BOTTOMRIGHT",
+        relativeTo = slotAnchorTarget,
+        relativePoint = "TOPLEFT",
+        x = 7,
+        y = -9,
+    },
+}
 local slotButton = AF.AddCustomAuraSlot(container, "boss", "HARMFUL", slotOptions, buttonStyle)
 assertEqual(slotButton, container.buttons[2], "slot return value")
+assertEqual(slotButton.point[1], "BOTTOMRIGHT", "slot anchor point")
+assertEqual(slotButton.point[2], slotAnchorTarget, "slot anchor target identity")
+assertEqual(slotButton.point[3], "TOPLEFT", "slot relative point")
+assertEqual(slotButton.point[4], 7, "slot anchor x")
+assertEqual(slotButton.point[5], -9, "slot anchor y")
+local slotCall = findCall(container.calls, "AddAuraSlot")
+assertEqual(slotCall.args[3].anchor, nil, "AF-only slot anchor forwarded natively")
+assertEqual(slotOptions.anchor.relativeTo, slotAnchorTarget, "caller slot anchor mutated")
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals({
+        containerCreateAttempts = 1,
+        containerAllocations = 1,
+        containerCreateCompletions = 1,
+        trackedContainers = 1,
+        groupAddAttempts = 1,
+        groupsAdded = 1,
+        slotAddAttempts = 1,
+        slotsAdded = 1,
+        initialFrameReservationsAttempted = 11,
+        initialFrameReservationsCompleted = 11,
+    }),
+    "slot construction totals"
+)
+local beforeSlotTuning = AF.GetCustomAuraContainerConstructionTotals()
 AF.SetCustomAuraSlotFilterString(container, "boss", "HARMFUL|RAID")
 AF.SetCustomAuraSlotCandidateFilters(container, "boss", candidateFilters)
 AF.SetCustomAuraSlotSortMethod(
@@ -679,6 +896,11 @@ assertCall(findCall(container.calls, "SetAuraSlotCandidateFilters"),
     "SetAuraSlotCandidateFilters", "boss", candidateFilters)
 assertCall(findCall(container.calls, "SetAuraSlotSortMethod"), "SetAuraSlotSortMethod",
     "boss", api.AuraContainerSortMethod.Default, api.AuraContainerSortDirection.Normal)
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionTotals(),
+    beforeSlotTuning,
+    "slot tuning must not grow construction"
+)
 
 local enchantmentButton = AF.AddCustomItemEnchantment(
     container,
@@ -688,6 +910,25 @@ local enchantmentButton = AF.AddCustomItemEnchantment(
 )
 assertEqual(enchantmentButton, container.buttons[3], "enchantment return value")
 assert(state.bindings[1] ~= state.bindings[2], "duration bindings must be button-local")
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals({
+        containerCreateAttempts = 1,
+        containerAllocations = 1,
+        containerCreateCompletions = 1,
+        trackedContainers = 1,
+        groupAddAttempts = 1,
+        groupsAdded = 1,
+        slotAddAttempts = 1,
+        slotsAdded = 1,
+        itemEnchantmentAddAttempts = 1,
+        itemEnchantmentsAdded = 1,
+        initialFrameReservationsAttempted = 12,
+        initialFrameReservationsCompleted = 12,
+    }),
+    "item enchantment construction totals"
+)
+local beforeEnchantmentTuning = AF.GetCustomAuraContainerConstructionTotals()
 AF.SetCustomItemEnchantmentSortMethod(
     container,
     api.AuraContainerItemEnchantmentSortMethod.Duration,
@@ -706,18 +947,176 @@ assertCall(findCall(container.calls, "SetItemEnchantmentSortMethod"),
 assertCall(findCall(container.calls, "SetItemEnchantmentLayout"),
     "SetItemEnchantmentLayout", enchantmentLayout)
 assertCall(findCall(container.calls, "ResetItemEnchantmentLayout"), "ResetItemEnchantmentLayout")
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionTotals(),
+    beforeEnchantmentTuning,
+    "item enchantment tuning must not grow construction"
+)
 
+local beforeLifecycleTuning = AF.GetCustomAuraContainerConstructionTotals()
 AF.SetCustomAuraContainerUnit(container, "player")
 AF.UpdateCustomAuraContainer(container)
 AF.SetCustomAuraContainerEnabled(container, true)
 assertCall(findCall(container.calls, "SetUnit"), "SetUnit", "player")
 assertCall(findCall(container.calls, "UpdateAllAuras"), "UpdateAllAuras")
 assertCall(findCall(container.calls, "SetEnabled"), "SetEnabled", true)
+assertSnapshotEqual(
+    AF.GetCustomAuraContainerConstructionTotals(),
+    beforeLifecycleTuning,
+    "container lifecycle tuning must not grow construction"
+)
 
 -- Test-only pcall captures AF's expected non-secret reserved-option assertion.
+local beforeInvalidSlot = AF.GetCustomAuraContainerConstructionTotals()
 local ok = pcall(AF.AddCustomAuraSlot, container, "invalid", "HELPFUL", {
     initializeFrame = function() end,
 })
 assertEqual(ok, false, "reserved initializeFrame must be rejected")
+local afterInvalidSlot = AF.GetCustomAuraContainerConstructionTotals()
+assertEqual(
+    afterInvalidSlot.slotAddAttempts,
+    beforeInvalidSlot.slotAddAttempts,
+    "rejected slot native attempt count"
+)
+assertEqual(
+    afterInvalidSlot.slotsAdded,
+    beforeInvalidSlot.slotsAdded,
+    "failed slot completion count"
+)
+assertEqual(
+    afterInvalidSlot.initialFrameReservationsAttempted,
+    beforeInvalidSlot.initialFrameReservationsAttempted,
+    "rejected slot reservation attempt"
+)
+assertEqual(
+    afterInvalidSlot.initialFrameReservationsCompleted,
+    beforeInvalidSlot.initialFrameReservationsCompleted,
+    "failed slot reservation completion"
+)
+
+local failureAF, failureState, failureAPI = loadAuraModule(true, false)
+
+-- Test-only pcall captures deterministic wrapper failures and verifies that
+-- attempts remain visible without turning diagnostics into an error boundary.
+failureState.failNextAuraContainerCreation = true
+local createOK = pcall(failureAF.CreateCustomAuraContainer, {})
+assertEqual(createOK, false, "forced allocation failure")
+assertSnapshotEqual(
+    failureAF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals({
+        containerCreateAttempts = 1,
+    }),
+    "failed allocation totals"
+)
+
+failureState.failNextContainerSetSize = true
+createOK = pcall(failureAF.CreateCustomAuraContainer, {})
+assertEqual(createOK, false, "forced construction failure")
+local partialContainer = failureState.containers[1]
+assertSnapshotEqual(
+    failureAF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals({
+        containerCreateAttempts = 2,
+        containerAllocations = 1,
+        trackedContainers = 1,
+    }),
+    "partial construction totals"
+)
+assertSnapshotEqual(
+    failureAF.GetCustomAuraContainerConstructionStats(partialContainer),
+    expectedConstructionStats(true, {
+        containerCreateAttempts = 1,
+        containerAllocations = 1,
+    }),
+    "partial construction stats"
+)
+
+local externalContainer = makeContainer(failureState)
+local beforeExternalLookup = failureAF.GetCustomAuraContainerConstructionTotals()
+assertEqual(
+    failureAF.GetCustomAuraContainerConstructionStats(externalContainer),
+    nil,
+    "external container unknown before mutation"
+)
+assertSnapshotEqual(
+    failureAF.GetCustomAuraContainerConstructionTotals(),
+    beforeExternalLookup,
+    "external getter must not register"
+)
+
+failureAF.SetCustomAuraContainerEnabled(externalContainer, false)
+assertSnapshotEqual(
+    failureAF.GetCustomAuraContainerConstructionStats(externalContainer),
+    expectedConstructionStats(false),
+    "external container stats"
+)
+local afterExternalTracking = failureAF.GetCustomAuraContainerConstructionTotals()
+assertEqual(afterExternalTracking.trackedContainers, 2, "tracked external container")
+assertEqual(afterExternalTracking.externalContainersObserved, 1, "observed external container")
+failureAF.SetCustomAuraContainerFlowLayout(externalContainer, {})
+assertSnapshotEqual(
+    failureAF.GetCustomAuraContainerConstructionTotals(),
+    afterExternalTracking,
+    "external tuning must not grow construction"
+)
+
+externalContainer.failNextCall = "AddAuraGroup"
+local groupOK = pcall(
+    failureAF.AddCustomAuraGroup,
+    externalContainer,
+    "failedGroup",
+    "HELPFUL"
+)
+assertEqual(groupOK, false, "forced group failure")
+
+externalContainer.failNextCall = "AddAuraSlot"
+local slotOK = pcall(
+    failureAF.AddCustomAuraSlot,
+    externalContainer,
+    "failedSlot",
+    "HARMFUL",
+    {
+        sortMethod = failureAPI.AuraContainerSortMethod.Default,
+        sortDirection = failureAPI.AuraContainerSortDirection.Normal,
+    }
+)
+assertEqual(slotOK, false, "forced slot failure")
+
+externalContainer.failNextCall = "AddItemEnchantment"
+local enchantmentOK = pcall(
+    failureAF.AddCustomItemEnchantment,
+    externalContainer,
+    failureAPI.AuraContainerItemEnchantmentSlot.MainHand
+)
+assertEqual(enchantmentOK, false, "forced item enchantment failure")
+assertSnapshotEqual(
+    failureAF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals({
+        containerCreateAttempts = 2,
+        containerAllocations = 1,
+        trackedContainers = 2,
+        externalContainersObserved = 1,
+        groupAddAttempts = 1,
+        slotAddAttempts = 1,
+        itemEnchantmentAddAttempts = 1,
+        initialFrameReservationsAttempted = 12,
+    }),
+    "failed add totals"
+)
+
+assertEqual(
+    failureAF.ResetCustomAuraContainerConstructionTotals,
+    nil,
+    "construction totals reset API"
+)
+assertEqual(
+    failureAF.ResetCustomAuraContainerConstructionStats,
+    nil,
+    "container construction reset API"
+)
+assertEqual(state.auraDataProviderSwitchCalls, 0, "native provider switch ownership")
+assertEqual(state.auraDataProviderResetCalls, 0, "native provider reset ownership")
+assertEqual(failureState.auraDataProviderSwitchCalls, 0, "failure provider switch ownership")
+assertEqual(failureState.auraDataProviderResetCalls, 0, "failure provider reset ownership")
 
 print("aura_container_12_1_test: OK")

@@ -1,3 +1,7 @@
+r34:
+
+- Add cumulative native AuraContainer construction diagnostics and initializer-time slot anchoring.
+
 r33:
 
 - Add the Retail 12.1 native AuraContainer adapter for secret-safe aura presentation.
