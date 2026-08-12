@@ -7,7 +7,7 @@ local F = AF.funcs
 -- pixel perfect
 ---------------------------------------------------------------------
 function AF.GetPixelFactor()
-    local _, physicalHeight = GetPhysicalScreenSize()
+    local physicalHeight = select(2, GetPhysicalScreenSize())
     return 768.0 / physicalHeight
 end
 
@@ -692,16 +692,16 @@ function AF.AddToPixelUpdater_OnShow(r, target, fn, combatSafeOnly)
             end
             lastOnShows[self] = lastPixelUpdateTime
 
-            local targetComponents = onShowComponents[self]
-            if type(targetComponents) == "table" then
-                for region in next, targetComponents do
+            local regions = onShowComponents[self]
+            if type(regions) == "table" then
+                for region in next, regions do
                     if region._pixelUpdateCombatSafeOnly and InCombatLockdown() then
                         queue:push(region)
                     else
                         region:UpdatePixels()
                     end
                 end
-            elseif targetComponents then
+            elseif regions then
                 if self._pixelUpdateCombatSafeOnly and InCombatLockdown() then
                     queue:push(self)
                 else
