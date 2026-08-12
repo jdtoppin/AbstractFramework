@@ -1,3 +1,7 @@
+r37:
+
+- Allow callers to paint Block-style aura fills with an optional static RGBA colour while preserving the existing gray default.
+
 r36:
 
 - Abbreviate aura countdowns with native one-letter seconds, minutes, hours, and days while keeping opaque duration values inside Blizzard's duration binding.
