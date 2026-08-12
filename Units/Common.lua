@@ -20,7 +20,7 @@ local GetUnitName = GetUnitName
 local GetNormalizedRealmName = GetNormalizedRealmName
 local UnitLevel = UnitLevel
 local UnitEffectiveLevel = UnitEffectiveLevel
-local IsLevelAtEffectiveMaxLevel = IsLevelAtEffectiveMaxLevel
+local GetEffectiveMaxLevelForPlayer = GameRulesUtil.GetEffectiveMaxLevelForPlayer
 local UnitClassification = UnitClassification
 local UnitExists = UnitExists
 local UnitPlayerControlled = UnitPlayerControlled
@@ -421,11 +421,7 @@ end
 ---@return boolean isMaxLevel
 function AF.IsMaxLevel(unit)
     unit = unit or "player"
-    -- local maxLevel = GetMaxLevelForLatestExpansion() --? GetMaxPlayerLevel()
-    local level = UnitLevel(unit)
-    local isMaxLevel = IsLevelAtEffectiveMaxLevel(level)
-    -- local isTrialMaxLevel =  (IsRestrictedAccount() or IsTrialAccount() or IsVeteranTrialAccount()) and (playerLevel == 20)
-    return isMaxLevel -- or isTrialMaxLevel
+    return UnitLevel(unit) >= GetEffectiveMaxLevelForPlayer()
 end
 
 function AF.GetLevelText(unit)
