@@ -1,3 +1,7 @@
+r42:
+
+- Add an opt-in native square aura border whose harmful-aura colour is selected privately by Blizzard, including the native None category for untyped effects.
+
 r41:
 
 - Add a scriptless native dispel-overlay AuraSlot primitive for unit-frame health-bar colouring without exposing aura data to addon Lua.

@@ -741,11 +741,15 @@ local function InitializeCustomAuraButton(button, style, anchor)
     end
 
     local dispelOverlay
-    if style.dispelColor then
+    if style.dispelColor or style.nativeDispelColor then
         dispelOverlay = overlayFrame:CreateTexture(nil, "OVERLAY")
         dispelOverlay:SetAllPoints()
-        dispelOverlay:SetTexture([[Interface\Buttons\UI-Debuff-Overlays]])
-        dispelOverlay:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
+        if style.nativeDispelColor then
+            dispelOverlay:SetTexture(AF.GetTexture("Border"))
+        else
+            dispelOverlay:SetTexture([[Interface\Buttons\UI-Debuff-Overlays]])
+            dispelOverlay:SetTexCoord(0.296875, 0.5703125, 0, 0.515625)
+        end
         dispelOverlay:Hide()
     end
 
@@ -779,13 +783,20 @@ local function InitializeCustomAuraButton(button, style, anchor)
         button:SetApplicationCount(stackText)
     end
     if dispelOverlay then
-        button:AddDispelTypeTexture(dispelOverlay, {
+        -- Retail 12.1.0.69273 (wow-ui-source eb941aad028d) applies Blizzard's
+        -- Magic/Curse/Disease/Poison/Bleed/None colors to PreserveAsset when
+        -- no custom color curve or map is supplied.
+        local dispelOptions = {
             style = customDispelTypeTextureStyle.PreserveAsset,
             showWhenHarmful = true,
             showWhenHelpful = false,
-            showWithoutDispelType = false,
-            customDispelColorCurve = style.dispelColorCurve or AF.GetAuraDispelColorCurve(),
-        })
+            showWithoutDispelType = style.nativeDispelColor == true,
+        }
+        if not style.nativeDispelColor then
+            dispelOptions.customDispelColorCurve =
+                style.dispelColorCurve or AF.GetAuraDispelColorCurve()
+        end
+        button:AddDispelTypeTexture(dispelOverlay, dispelOptions)
     end
     if style.tooltip then
         button:EnableMouse(style.tooltip.enabled)
@@ -826,6 +837,14 @@ end
 local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle, anchor, stripAnchor)
     local options = CopyCustomAuraNativeOptions(buttonOptions, stripAnchor)
     local style = AF.Copy(buttonStyle or {})
+    if style.nativeDispelColor ~= nil then
+        assert(type(style.nativeDispelColor) == "boolean",
+            "nativeDispelColor must be a boolean")
+        assert(not (style.nativeDispelColor and style.dispelColor),
+            "nativeDispelColor and dispelColor are mutually exclusive")
+        assert(not (style.nativeDispelColor and style.dispelColorCurve),
+            "nativeDispelColor cannot be combined with dispelColorCurve")
+    end
     if style.tooltip then
         assert(type(style.tooltip.enabled) == "boolean", "tooltip.enabled must be a boolean")
         assert(style.tooltip.enabled or not style.cancelAuraButtons,
@@ -1192,6 +1211,11 @@ end
 
 ---@return boolean
 function AF.HasCustomAuraContainer()
+    return AF.hasCustomAuraContainer
+end
+
+---@return boolean
+function AF.HasNativeDispelColorTexture()
     return AF.hasCustomAuraContainer
 end
 

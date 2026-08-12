@@ -547,6 +547,7 @@ local function loadAuraModule(currentSchema, forbidCreateFrame, mutateEnvironmen
         auraDataProviderResetCalls = 0,
         forbiddenAuraEnumerationCalls = 0,
         plainTexture = {},
+        borderTexture = {},
     }
     local environment = {}
     setmetatable(environment, {__index = _G})
@@ -857,6 +858,10 @@ local function loadAuraModule(currentSchema, forbidCreateFrame, mutateEnvironmen
         GetPlainTexture = function()
             return state.plainTexture
         end,
+        GetTexture = function(texture)
+            assertEqual(texture, "Border", "requested AF texture")
+            return state.borderTexture
+        end,
         ApplyDefaultBackdrop = function() end,
         SetFrameLevel = function(frame, level, relativeTo)
             frame:SetFrameLevel(level, relativeTo)
@@ -907,6 +912,8 @@ end
 local legacyFramework, legacyState, legacyApi = loadAuraModule(false, true)
 assertDurationFormatter(legacyState, legacyApi, "legacy schema")
 assertEqual(legacyFramework.HasCustomAuraContainer(), false, "legacy schema capability")
+assertEqual(legacyFramework.HasNativeDispelColorTexture(), false,
+    "legacy native dispel color capability")
 assertSnapshotEqual(
     legacyFramework.GetCustomAuraContainerConstructionTotals(),
     expectedConstructionTotals(),
@@ -939,6 +946,8 @@ end
 local AF, state, api = loadAuraModule(true, false)
 local durationFormatter = assertDurationFormatter(state, api, "current schema")
 assertEqual(AF.HasCustomAuraContainer(), true, "current schema capability")
+assertEqual(AF.HasNativeDispelColorTexture(), true,
+    "current native dispel color capability")
 assertSnapshotEqual(
     AF.GetCustomAuraContainerConstructionTotals(),
     expectedConstructionTotals(),
@@ -1217,6 +1226,11 @@ assertCall(
 )
 assertEqual(firstButton.bindings.SetApplicationCount.n, 1, "application-count formatter must be absent")
 local dispelOptions = firstButton.bindings.AddDispelTypeTexture[2]
+local customDispelTexture = firstButton.bindings.AddDispelTypeTexture[1]
+assertCall(findCall(customDispelTexture.calls, "SetTexture"),
+    "SetTexture", [[Interface\Buttons\UI-Debuff-Overlays]])
+assertCall(findCall(customDispelTexture.calls, "SetTexCoord"),
+    "SetTexCoord", 0.296875, 0.5703125, 0, 0.515625)
 assertEqual(dispelOptions.style, 3, "dispel texture style")
 assertEqual(dispelOptions.showWhenHarmful, true, "harmful dispel texture")
 assertEqual(dispelOptions.showWhenHelpful, false, "helpful dispel texture")
@@ -2019,6 +2033,98 @@ for index, threshold in ipairs(malformedThresholds) do
         0.75
     )
 end
+
+local nativeDispelAF, nativeDispelState, nativeDispelAPI =
+    loadAuraModule(true, false)
+local nativeDispelContainer = nativeDispelAF.CreateCustomAuraContainer(
+    {},
+    "AFNativeDispelColorContainer"
+)
+local nativeDispelStyle = {
+    noBorder = true,
+    width = 16,
+    height = 16,
+    cooldownStyle = "none",
+    nativeDispelColor = true,
+}
+nativeDispelAF.AddCustomAuraGroup(
+    nativeDispelContainer,
+    "nativeDispelColor",
+    "HARMFUL",
+    {maxFrameCount = 1},
+    nativeDispelStyle
+)
+assertEqual(nativeDispelStyle.nativeDispelColor, true,
+    "caller native dispel color mutated")
+assertEqual(nativeDispelStyle.dispelColor, nil,
+    "caller custom dispel color injected")
+assertEqual(nativeDispelStyle.dispelColorCurve, nil,
+    "caller custom dispel curve injected")
+
+local nativeDispelButton = nativeDispelContainer.buttons[1]
+local nativeDispelBinding = nativeDispelButton.bindings.AddDispelTypeTexture
+local nativeDispelTexture = nativeDispelBinding[1]
+local nativeDispelOptions = nativeDispelBinding[2]
+assertCall(findCall(nativeDispelTexture.calls, "SetTexture"),
+    "SetTexture", nativeDispelState.borderTexture)
+assertEqual(findCall(nativeDispelTexture.calls, "SetTexCoord"), nil,
+    "native dispel color inherited custom texture crop")
+assertEqual(
+    nativeDispelOptions.style,
+    nativeDispelAPI.Enum.CustomAuraButtonDispelTypeTextureStyle.PreserveAsset,
+    "native dispel color texture style"
+)
+assertEqual(nativeDispelOptions.showWhenHarmful, true,
+    "native dispel color harmful visibility")
+assertEqual(nativeDispelOptions.showWhenHelpful, false,
+    "native dispel color helpful visibility")
+assertEqual(nativeDispelOptions.showWithoutDispelType, true,
+    "native dispel color untyped visibility")
+assertEqual(nativeDispelOptions.customDispelColorCurve, nil,
+    "native dispel color curve override")
+assertEqual(nativeDispelOptions.customDispelColorMap, nil,
+    "native dispel color map override")
+assertEqual(#nativeDispelState.colorCurves, 0,
+    "native dispel color custom curve allocation")
+assert(nativeDispelButton.firstBindingSequence
+        > nativeDispelButton.lastRegionStyleSequence,
+    "native dispel color styling must precede native registration")
+assertEqual(nativeDispelState.forbiddenAuraEnumerationCalls, 0,
+    "native dispel color forbidden aura reads")
+
+local conflictingModesAccepted, conflictingModesError = pcall(function()
+    nativeDispelAF.AddCustomAuraGroup(
+        nativeDispelContainer,
+        "conflictingDispelModes",
+        "HARMFUL",
+        {maxFrameCount = 1},
+        {dispelColor = true, nativeDispelColor = true}
+    )
+end)
+assertEqual(conflictingModesAccepted, false,
+    "conflicting native and custom dispel modes")
+assert(tostring(conflictingModesError):find(
+        "nativeDispelColor and dispelColor are mutually exclusive",
+        1,
+        true
+    ), "conflicting dispel mode error")
+
+local conflictingCurveAccepted, conflictingCurveError = pcall(function()
+    nativeDispelAF.AddCustomAuraGroup(
+        nativeDispelContainer,
+        "conflictingDispelCurve",
+        "HARMFUL",
+        {maxFrameCount = 1},
+        {nativeDispelColor = true, dispelColorCurve = {}}
+    )
+end)
+assertEqual(conflictingCurveAccepted, false,
+    "conflicting native dispel color curve")
+assert(tostring(conflictingCurveError):find(
+        "nativeDispelColor cannot be combined with dispelColorCurve",
+        1,
+        true
+    ), "conflicting native dispel curve error")
 
 local overlayAF, overlayState, overlayAPI = loadAuraModule(true, false)
 local overlayContainer = overlayAF.CreateCustomAuraContainer(
