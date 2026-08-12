@@ -6,32 +6,19 @@ local AF = select(2, ...)
 -- pixel perfect
 ---------------------------------------------------------------------
 function AF.GetPixelFactor()
-    local physicalWidth, physicalHeight = GetPhysicalScreenSize()
+    local physicalHeight = select(2, GetPhysicalScreenSize())
     return 768.0 / physicalHeight
 end
 
+local REFERENCE_UI_SCALE = 768.0 / 1080.0
+
 function AF.GetBestScale()
-    -- local physicalWidth, physicalHeight = GetPhysicalScreenSize()
-    -- local pixelFactor = 768.0 / physicalHeight
-
-    -- if physicalHeight >= 2160 then -- 4K
-    --     return 0.6
-    -- elseif physicalHeight >= 1440 then -- 2K/1440p
-    --     return 0.65
-    -- else -- 1080p
-    --     return AF.Clamp(pixelFactor, 0.5, 1.15)
-    -- end
-
     local factor = AF.GetPixelFactor()
-    local mult
-    if factor >= 0.71 then -- 1080p
-        mult = 1
-    elseif factor >= 0.53 then -- 1440p
-        mult = 1.15
-    else -- 2160p
-        mult = 1.7
-    end
-    return AF.Clamp(AF.RoundToDecimal(factor * mult, 2), 0.5, 1.5)
+
+    -- Keep the 1080p reference composition at higher resolutions. Below
+    -- 1080p, retain one UI unit per physical pixel for legibility. Regions
+    -- using PixelUtil still snap their dimensions and offsets separately.
+    return AF.Clamp(AF.RoundToDecimal(math.max(factor, REFERENCE_UI_SCALE), 2), 0.5, 1.5)
 end
 
 function AF.GetNearestPixelSize(uiUnitSize, layoutScale, minPixels)
@@ -691,16 +678,16 @@ function AF.AddToPixelUpdater_OnShow(r, target, fn, combatSafeOnly)
             end
             lastOnShows[self] = lastPixelUpdateTime
 
-            local components = onShowComponents[self]
-            if type(components) == "table" then
-                for region in next, components do
+            local regions = onShowComponents[self]
+            if type(regions) == "table" then
+                for region in next, regions do
                     if region._pixelUpdateCombatSafeOnly and InCombatLockdown() then
                         queue:push(region)
                     else
                         region:UpdatePixels()
                     end
                 end
-            elseif components then
+            elseif regions then
                 if self._pixelUpdateCombatSafeOnly and InCombatLockdown() then
                     queue:push(self)
                 else
