@@ -1,3 +1,9 @@
+r31:
+
+- Validate saved mover positions before replacing existing anchors.
+- Make mover editing fail closed when frame geometry is unavailable or secret.
+- Close active mover editing safely when combat begins.
+
 r30:
 
 - Add AF.AttachTransientScrollBar (template-free fade-in/out scroll bar with inactivity fade and drag hold)
