@@ -1,3 +1,7 @@
+r36:
+
+- Abbreviate aura countdowns with native one-letter seconds, minutes, hours, and days while keeping opaque duration values inside Blizzard's duration binding.
+
 r35:
 
 - Restore vertical and block-vertical aura timing with native duration bars, without adding a second countdown provider.

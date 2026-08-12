@@ -477,6 +477,7 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
         bindings = {},
         containers = {},
         durations = {},
+        durationFormatters = {},
         auraFilterCalls = {},
         auraInstanceIDs = {},
         filteredOut = {},
@@ -534,9 +535,46 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
     }
     environment.C_StringUtil = {
         CreateNumericRuleFormatter = function()
-            return {
-                SetBreakpoints = function() end,
-            }
+            error("aura durations must use the native seconds formatter", 2)
+        end,
+        CreateSecondsFormatter = function()
+            local calls = {}
+            local formatter = {calls = calls}
+            state.durationFormatters[#state.durationFormatters + 1] = formatter
+
+            function formatter:SetDefaultAbbreviation(...)
+                record(calls, "SetDefaultAbbreviation", ...)
+            end
+
+            function formatter:SetMinInterval(...)
+                record(calls, "SetMinInterval", ...)
+            end
+
+            function formatter:SetMaxInterval(...)
+                record(calls, "SetMaxInterval", ...)
+            end
+
+            function formatter:SetDesiredUnitCount(...)
+                record(calls, "SetDesiredUnitCount", ...)
+            end
+
+            function formatter:SetCanRoundUpLastUnit(...)
+                record(calls, "SetCanRoundUpLastUnit", ...)
+            end
+
+            function formatter:SetCanRoundUpIntervals(...)
+                record(calls, "SetCanRoundUpIntervals", ...)
+            end
+
+            function formatter:SetMillisecondsThreshold(...)
+                record(calls, "SetMillisecondsThreshold", ...)
+            end
+
+            function formatter:SetStripIntervalWhitespace(...)
+                record(calls, "SetStripIntervalWhitespace", ...)
+            end
+
+            return formatter
         end,
     }
     environment.C_DurationUtil = {
@@ -627,6 +665,9 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
     }
     environment.Enum = {
         LuaCurveType = {Step = 1},
+        SecondsFormatterAbbreviation = {OneLetter = 1},
+        SecondsFormatterInterval = {Seconds = 1, Days = 4},
+        SecondsFormatterIntervalWhitespace = {Strip = 1},
         StatusBarInterpolation = {Immediate = 0},
         StatusBarTimerDirection = {ElapsedTime = 0},
         CustomAuraButtonDispelTypeTextureStyle = {PreserveAsset = 3},
@@ -752,7 +793,31 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
     return framework, state, environment
 end
 
-local legacyFramework = loadAuraModule(false, true)
+local function assertDurationFormatter(state, api, message)
+    assertEqual(#state.durationFormatters, 1, message .. " formatter count")
+    local formatter = state.durationFormatters[1]
+    assertCall(
+        formatter.calls[1],
+        "SetDefaultAbbreviation",
+        api.Enum.SecondsFormatterAbbreviation.OneLetter
+    )
+    assertCall(formatter.calls[2], "SetMinInterval", api.Enum.SecondsFormatterInterval.Seconds)
+    assertCall(formatter.calls[3], "SetMaxInterval", api.Enum.SecondsFormatterInterval.Days)
+    assertCall(formatter.calls[4], "SetDesiredUnitCount", 1)
+    assertCall(formatter.calls[5], "SetCanRoundUpLastUnit", false)
+    assertCall(formatter.calls[6], "SetCanRoundUpIntervals", false)
+    assertCall(formatter.calls[7], "SetMillisecondsThreshold", 60)
+    assertCall(
+        formatter.calls[8],
+        "SetStripIntervalWhitespace",
+        api.Enum.SecondsFormatterIntervalWhitespace.Strip
+    )
+    assertEqual(#formatter.calls, 8, message .. " formatter configuration call count")
+    return formatter
+end
+
+local legacyFramework, legacyState, legacyApi = loadAuraModule(false, true)
+assertDurationFormatter(legacyState, legacyApi, "legacy schema")
 assertEqual(legacyFramework.HasCustomAuraContainer(), false, "legacy schema capability")
 assertSnapshotEqual(
     legacyFramework.GetCustomAuraContainerConstructionTotals(),
@@ -761,6 +826,7 @@ assertSnapshotEqual(
 )
 
 local AF, state, api = loadAuraModule(true, false)
+local durationFormatter = assertDurationFormatter(state, api, "current schema")
 assertEqual(AF.HasCustomAuraContainer(), true, "current schema capability")
 assertSnapshotEqual(
     AF.GetCustomAuraContainerConstructionTotals(),
@@ -1004,10 +1070,10 @@ assertCall({
 }, "SetCancelAuraButtons", "RightButtonUp")
 
 local durationBinding = durationOptions.binding
-assertCall(durationBinding.calls[1], "SetFormatter", findCall(durationBinding.calls, "SetFormatter").args[1])
+assertCall(durationBinding.calls[1], "SetFormatter", durationFormatter)
 assertCall(durationBinding.calls[2], "SetExpiredText", "0.0")
 assertCall(durationBinding.calls[3], "SetZeroDurationText", "")
-assertCall(durationBinding.calls[4], "SetUpdateInterval", 0)
+assertCall(durationBinding.calls[4], "SetUpdateInterval", 0.1)
 
 local candidateFilters = {includeDispelTypes = {Magic = true}}
 local groupLayout = {elementSpacing = 3, forceNewLine = true}
@@ -1181,6 +1247,7 @@ local legacyAura = AF.InitAura(makeButton(), true)
 local legacyIcon = legacyAura.icon
 local legacyCooldown = legacyAura.cooldown
 local legacyDurationBar = legacyAura.durationBar
+local legacyDurationTextBinding = legacyAura.durationTextBinding
 assertEqual(legacyCooldown.hideCountdownNumbers, true,
     "legacy cooldown countdown suppression")
 assertEqual(legacyCooldown.noCooldownCount, true,
@@ -1189,6 +1256,16 @@ assertEqual(legacyDurationBar.orientation, "VERTICAL",
     "legacy duration bar orientation")
 assertEqual(legacyDurationBar.reverseFill, true,
     "legacy duration bar reverse fill")
+assertCall(
+    findCall(legacyDurationTextBinding.calls, "SetFormatter"),
+    "SetFormatter",
+    durationFormatter
+)
+assertCall(
+    findCall(legacyDurationTextBinding.calls, "SetUpdateInterval"),
+    "SetUpdateInterval",
+    0.1
+)
 
 legacyAura:SetCooldownStyle("vertical")
 assertEqual(legacyCooldown.shown, false, "legacy vertical cooldown visibility")
