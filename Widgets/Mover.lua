@@ -15,7 +15,7 @@ local isAnchorLocked = false
 local hidingMovers = false
 local modified = {}
 
--- Retail 12.1.0.68914 (wow-ui-source d3915c78) marks frame points,
+-- Retail 12.1.0.69273 (wow-ui-source eb941aad) marks frame points,
 -- dimensions, centers, edges, and scale as secret-capable. GetPoint may also
 -- return nothing. Mover interaction therefore validates every native result
 -- before Lua work and uses AF's ordinary point ledger for initial snapshots.
