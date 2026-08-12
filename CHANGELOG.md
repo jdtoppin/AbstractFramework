@@ -1,3 +1,7 @@
+r43:
+
+- Add click-only mover actions for handoffs to externally owned layout editors.
+
 r42:
 
 - Add an opt-in native square aura border whose harmful-aura colour is selected privately by Blizzard, including the native None category for untyped effects.
