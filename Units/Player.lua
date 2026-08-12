@@ -24,9 +24,9 @@ local GetSpecializationInfo = C_SpecializationInfo.GetSpecializationInfo
 ---@return number? classID
 function AF.UnitClassBase(unit)
     local classFileName, classID = select(2, UnitClass(unit))
-    -- Retail 12.1 PTR 7 makes UnitClass return secrets when the unit's
-    -- identity is secret. Do not let those values escape into table keys,
-    -- comparisons, concatenation, or color selection.
+    -- Retail 12.1.0.69273 (wow-ui-source eb941aad) makes UnitClass return
+    -- secrets when the unit's identity is secret. Do not let those values
+    -- escape into table keys, comparisons, concatenation, or color selection.
     if not F.isValueNonSecret(classFileName)
         or not F.isValueNonSecret(classID)
     then
