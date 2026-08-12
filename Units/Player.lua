@@ -1,5 +1,6 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
+local F = AF.funcs
 
 local BNGetInfo = BNGetInfo
 local UnitName = UnitName
@@ -19,10 +20,19 @@ local GetSpecializationInfo = C_SpecializationInfo.GetSpecializationInfo
 -- UnitClassBase --! fix wrong class for AI
 ---------------------------------------------------------------------
 ---@param unit string
----@return string classFileName
----@return number classID
+---@return string? classFileName
+---@return number? classID
 function AF.UnitClassBase(unit)
-    return select(2, UnitClass(unit))
+    local classFileName, classID = select(2, UnitClass(unit))
+    -- Retail 12.1.0.69273 (wow-ui-source eb941aad) makes UnitClass return
+    -- secrets when the unit's identity is secret. Do not let those values
+    -- escape into table keys, comparisons, concatenation, or color selection.
+    if not F.isValueNonSecret(classFileName)
+        or not F.isValueNonSecret(classID)
+    then
+        return nil, nil
+    end
+    return classFileName, classID
 end
 
 ---------------------------------------------------------------------

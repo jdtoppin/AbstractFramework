@@ -1,3 +1,7 @@
+r38:
+
+- Fail closed on secret unit class and phase identity before values reach Lua branching, table lookup, or colour selection.
+
 r37:
 
 - Allow callers to paint Block-style aura fills with an optional static RGBA colour while preserving the existing gray default.

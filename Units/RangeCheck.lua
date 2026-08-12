@@ -1,5 +1,6 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
+local F = AF.funcs
 
 local UnitClassBase = UnitClassBase
 local UnitIsVisible = UnitIsVisible
@@ -11,6 +12,7 @@ local IsSpellInRange = C_Spell.IsSpellInRange -- or IsSpellInRange
 local IsItemInRange = C_Item.IsItemInRange -- or IsItemInRange
 local CheckInteractDistance = CheckInteractDistance
 local UnitIsDead = UnitIsDead
+local UnitPhaseReason = UnitPhaseReason
 local IsSpellKnownOrOverridesKnown = IsSpellKnownOrOverridesKnown
 local IsSpellBookKnown = C_SpellBook.IsSpellKnown
 
@@ -27,7 +29,11 @@ end
 local UnitInSamePhase
 if AF.isRetail then
     UnitInSamePhase = function(unit)
-        return not UnitPhaseReason(unit)
+        local reason = UnitPhaseReason(unit)
+        -- Retail 12.1.0.69273 (wow-ui-source eb941aad) makes the phase reason
+        -- secret with unit identity. Unknown phase state must fail closed
+        -- instead of being inspected in Lua.
+        return F.isValueNonSecret(reason) and not reason
     end
 else
     UnitInSamePhase = UnitInPhase
