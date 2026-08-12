@@ -401,6 +401,157 @@ end
 ---------------------------------------------------------------------
 -- backdrops
 ---------------------------------------------------------------------
+
+local function SetLightweightBackdropColor(self, r, g, b, a)
+    local backdrop = self._afLightweightBackdrop
+    if not backdrop then return end
+
+    a = a or 1
+    backdrop.background:SetVertexColor(r, g, b, a)
+    backdrop.backgroundColor = {r, g, b, a}
+end
+
+local function GetLightweightBackdropColor(self)
+    local backdrop = self._afLightweightBackdrop
+    if backdrop and backdrop.backgroundColor then
+        return unpack(backdrop.backgroundColor)
+    end
+end
+
+local function SetLightweightBackdropBorderColor(self, r, g, b, a)
+    local backdrop = self._afLightweightBackdrop
+    if not backdrop then return end
+
+    a = a or 1
+    for _, border in ipairs(backdrop.borders) do
+        border:SetVertexColor(r, g, b, a)
+    end
+    backdrop.borderColor = {r, g, b, a}
+end
+
+local function GetLightweightBackdropBorderColor(self)
+    local backdrop = self._afLightweightBackdrop
+    if backdrop and backdrop.borderColor then
+        return unpack(backdrop.borderColor)
+    end
+end
+
+local function CreateSolidTexture(frame, layer, subLevel)
+    local texture = frame:CreateTexture(nil, layer, nil, subLevel)
+    texture:SetColorTexture(1, 1, 1, 1)
+    return texture
+end
+
+local function LayoutLightweightBackdrop(frame, backdrop, borderSize)
+    AF.SetInside(backdrop.background, frame, borderSize)
+
+    AF.ClearPoints(backdrop.top)
+    AF.SetPoint(backdrop.top, "TOPLEFT", frame, "TOPLEFT")
+    AF.SetPoint(backdrop.top, "TOPRIGHT", frame, "TOPRIGHT")
+    AF.SetHeight(backdrop.top, borderSize)
+
+    AF.ClearPoints(backdrop.bottom)
+    AF.SetPoint(backdrop.bottom, "BOTTOMLEFT", frame, "BOTTOMLEFT")
+    AF.SetPoint(backdrop.bottom, "BOTTOMRIGHT", frame, "BOTTOMRIGHT")
+    AF.SetHeight(backdrop.bottom, borderSize)
+
+    AF.ClearPoints(backdrop.left)
+    AF.SetPoint(backdrop.left, "TOPLEFT", backdrop.top, "BOTTOMLEFT")
+    AF.SetPoint(backdrop.left, "BOTTOMLEFT", backdrop.bottom, "TOPLEFT")
+    AF.SetWidth(backdrop.left, borderSize)
+
+    AF.ClearPoints(backdrop.right)
+    AF.SetPoint(backdrop.right, "TOPRIGHT", backdrop.top, "BOTTOMRIGHT")
+    AF.SetPoint(backdrop.right, "BOTTOMRIGHT", backdrop.bottom, "TOPRIGHT")
+    AF.SetWidth(backdrop.right, borderSize)
+
+    backdrop.borderSize = borderSize
+end
+
+---@param frame Frame
+function AF.UpdateLightweightBackdropPixels(frame)
+    local backdrop = frame and frame._afLightweightBackdrop
+    if not backdrop then return end
+
+    AF.ReSize(backdrop.background)
+    AF.RePoint(backdrop.background)
+    for _, border in ipairs(backdrop.borders) do
+        AF.ReSize(border)
+        AF.RePoint(border)
+    end
+end
+
+-- Retail 12.1.0.68914 (wow-ui-source d3915c78aba7),
+-- Blizzard_SharedXML/Backdrop.lua and Backdrop.xml: BackdropTemplate applies a
+-- center plus eight border regions and recalculates their texture coordinates
+-- from OnSizeChanged. Solid AF panels only need one fill and four edge strips.
+---@param frame Frame
+---@param borderSize? number defaults to one pixel
+---@return table lightweightBackdrop
+function AF.ApplyLightweightBackdrop(frame, borderSize)
+    assert(frame and frame.CreateTexture, "AF.ApplyLightweightBackdrop: frame must support textures.")
+
+    local backdrop = frame._afLightweightBackdrop
+    borderSize = borderSize or (backdrop and backdrop.borderSize) or 1
+
+    if not backdrop then
+        if frame.ClearBackdrop then
+            frame:ClearBackdrop()
+        end
+
+        local background = CreateSolidTexture(frame, "BACKGROUND", 0)
+        local top = CreateSolidTexture(frame, "BORDER", 0)
+        local bottom = CreateSolidTexture(frame, "BORDER", 0)
+        local left = CreateSolidTexture(frame, "BORDER", 0)
+        local right = CreateSolidTexture(frame, "BORDER", 0)
+
+        backdrop = {
+            background = background,
+            top = top,
+            bottom = bottom,
+            left = left,
+            right = right,
+            borders = {top, bottom, left, right},
+        }
+        frame._afLightweightBackdrop = backdrop
+
+        -- Preserve the setters used by existing AF widgets and consumers while
+        -- avoiding BackdropTemplateMixin and its nine-region layout path.
+        frame.SetBackdropColor = SetLightweightBackdropColor
+        frame.GetBackdropColor = GetLightweightBackdropColor
+        frame.SetBackdropBorderColor = SetLightweightBackdropBorderColor
+        frame.GetBackdropBorderColor = GetLightweightBackdropBorderColor
+        frame.UpdateLightweightBackdropPixels = AF.UpdateLightweightBackdropPixels
+    end
+
+    LayoutLightweightBackdrop(frame, backdrop, borderSize)
+    return backdrop
+end
+
+---@param frame Frame
+---@param color? string|table color name defined in Color.lua or color table
+---@param borderColor? string|table color name defined in Color.lua or color table
+---@param borderSize? number defaults to one pixel
+---@return table lightweightBackdrop
+function AF.ApplyLightweightBackdropWithColors(frame, color, borderColor, borderSize)
+    color = color or "background"
+    borderColor = borderColor or "border"
+
+    local backdrop = AF.ApplyLightweightBackdrop(frame, borderSize)
+    if type(color) == "string" then
+        frame:SetBackdropColor(AF.GetColorRGB(color))
+    else
+        frame:SetBackdropColor(unpack(color))
+    end
+    if type(borderColor) == "string" then
+        frame:SetBackdropBorderColor(AF.GetColorRGB(borderColor))
+    else
+        frame:SetBackdropBorderColor(unpack(borderColor))
+    end
+
+    return backdrop
+end
+
 function AF.ClearBackdrop(frame)
     if frame.ClearBackdrop then
         frame:ClearBackdrop()
