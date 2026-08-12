@@ -1,3 +1,8 @@
+r35:
+
+- Restore vertical and block-vertical aura timing with native duration bars, without adding a second countdown provider.
+- Add a narrow pre-12.1 filter-complement descriptor for the legacy aura-list compatibility path.
+
 r34:
 
 - Add cumulative native AuraContainer construction diagnostics and initializer-time slot anchoring.

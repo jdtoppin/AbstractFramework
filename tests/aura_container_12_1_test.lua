@@ -95,90 +95,132 @@ local function expectedConstructionStats(createdByAbstractFramework, overrides)
 end
 
 local function makeRegion(button)
-    local region = {}
+    local region = {
+        calls = {},
+    }
 
-    local function style()
+    local function style(name, ...)
         assert(not button.denied, "styled a denied custom aura button")
         button.sequence = button.sequence + 1
         button.lastRegionStyleSequence = button.sequence
+        record(region.calls, name, ...)
     end
 
-    function region:SetAllPoints()
-        style()
+    function region:SetAllPoints(...)
+        self.allPoints = pack(...)
+        style("SetAllPoints", ...)
     end
 
-    function region:SetColorTexture()
-        style()
+    function region:SetColorTexture(...)
+        style("SetColorTexture", ...)
     end
 
-    function region:SetTexCoord()
-        style()
+    function region:SetTexCoord(...)
+        style("SetTexCoord", ...)
     end
 
-    function region:SetDesaturated()
-        style()
+    function region:SetDesaturated(...)
+        style("SetDesaturated", ...)
     end
 
-    function region:SetTexture()
-        style()
+    function region:SetTexture(...)
+        self.texture = ...
+        style("SetTexture", ...)
     end
 
-    function region:SetShown()
-        style()
+    function region:SetShown(shown)
+        self.shown = shown
+        style("SetShown", shown)
     end
 
-    function region:SetDrawBling()
-        style()
+    function region:SetDrawBling(...)
+        style("SetDrawBling", ...)
     end
 
-    function region:SetDrawEdge()
-        style()
+    function region:SetDrawEdge(drawEdge)
+        self.drawEdge = drawEdge
+        style("SetDrawEdge", drawEdge)
     end
 
-    function region:SetUseAuraDisplayTime()
-        style()
+    function region:SetUseAuraDisplayTime(...)
+        style("SetUseAuraDisplayTime", ...)
     end
 
-    function region:SetHideCountdownNumbers()
-        style()
-    end
-
-    function region:SetOrientation()
-        style()
-    end
-
-    function region:SetReverseFill()
-        style()
-    end
-
-    function region:SetStatusBarTexture()
-        style()
-    end
-
-    function region:SetStatusBarColor()
-        style()
-    end
-
-    function region:SetTextColor()
-        style()
-    end
-
-    function region:SetFrameLevel()
-        style()
-    end
-
-    function region:CreateTexture()
-        style()
-        return makeRegion(button)
-    end
-
-    function region:CreateFontString()
-        style()
-        return makeRegion(button)
+    function region:SetTextColor(...)
+        style("SetTextColor", ...)
     end
 
     function region:Hide()
-        style()
+        self.shown = false
+        style("Hide")
+    end
+
+    function region:Show()
+        self.shown = true
+        style("Show")
+    end
+
+    function region:SetHideCountdownNumbers(hide)
+        self.hideCountdownNumbers = hide
+        style("SetHideCountdownNumbers", hide)
+    end
+
+    function region:SetOrientation(orientation)
+        self.orientation = orientation
+        style("SetOrientation", orientation)
+    end
+
+    function region:SetReverseFill(reverse)
+        self.reverseFill = reverse
+        style("SetReverseFill", reverse)
+    end
+
+    function region:SetStatusBarTexture(texture)
+        self.statusBarTexture = texture
+        style("SetStatusBarTexture", texture)
+    end
+
+    function region:SetStatusBarColor(...)
+        self.statusBarColor = pack(...)
+        style("SetStatusBarColor", ...)
+    end
+
+    function region:SetTimerDuration(...)
+        self.timerDuration = pack(...)
+        style("SetTimerDuration", ...)
+    end
+
+    function region:SetCooldownFromDurationObject(...)
+        self.cooldownDuration = pack(...)
+        style("SetCooldownFromDurationObject", ...)
+    end
+
+    function region:Clear()
+        style("Clear")
+    end
+
+    function region:SetText(...)
+        self.text = ...
+        style("SetText", ...)
+    end
+
+    function region:SetFrameLevel(...)
+        self.frameLevel = pack(...)
+        style("SetFrameLevel", ...)
+    end
+
+    function region:CreateTexture()
+        style("CreateTexture")
+        local child = makeRegion(button)
+        button.regions[#button.regions + 1] = child
+        return child
+    end
+
+    function region:CreateFontString()
+        style("CreateFontString")
+        local child = makeRegion(button)
+        button.regions[#button.regions + 1] = child
+        return child
     end
 
     return region
@@ -190,6 +232,9 @@ local function makeButton()
         denied = false,
         sequence = 0,
         lastRegionStyleSequence = 0,
+        frames = {},
+        regions = {},
+        scripts = {},
     }
 
     local function style()
@@ -221,12 +266,16 @@ local function makeButton()
 
     function button:CreateTexture()
         style()
-        return makeRegion(button)
+        local region = makeRegion(button)
+        button.regions[#button.regions + 1] = region
+        return region
     end
 
     function button:CreateFontString()
         style()
-        return makeRegion(button)
+        local region = makeRegion(button)
+        button.regions[#button.regions + 1] = region
+        return region
     end
 
     function button:SetIcon(...)
@@ -267,6 +316,22 @@ local function makeButton()
 
     function button:SetCancelAuraButtons(...)
         bind("SetCancelAuraButtons", ...)
+    end
+
+    function button:SetShown(shown)
+        self.shown = shown
+    end
+
+    function button:Show()
+        self.shown = true
+    end
+
+    function button:Hide()
+        self.shown = false
+    end
+
+    function button:SetScript(script, callback)
+        self.scripts[script] = callback
     end
 
     return button
@@ -411,8 +476,14 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
     local state = {
         bindings = {},
         containers = {},
+        durations = {},
+        auraFilterCalls = {},
+        auraInstanceIDs = {},
+        filteredOut = {},
+        allowLegacyAuraEnumeration = false,
         auraDataProviderSwitchCalls = 0,
         auraDataProviderResetCalls = 0,
+        plainTexture = {},
     }
     local environment = {}
     setmetatable(environment, {__index = _G})
@@ -422,13 +493,36 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
         error("12.1 adapter invoked manual C_UnitAuras enumeration", 2)
     end
 
+    local function getUnitAuraInstanceIDs(...)
+        if not state.allowLegacyAuraEnumeration then
+            return forbiddenAuraEnumeration()
+        end
+        record(state.auraFilterCalls, "GetUnitAuraInstanceIDs", ...)
+        return state.auraInstanceIDs
+    end
+
+    local function isAuraFilteredOut(unit, auraInstanceID, filterString)
+        if not state.allowLegacyAuraEnumeration then
+            return forbiddenAuraEnumeration()
+        end
+        record(
+            state.auraFilterCalls,
+            "IsAuraFilteredOutByInstanceID",
+            unit,
+            auraInstanceID,
+            filterString
+        )
+        local byFilter = state.filteredOut[filterString]
+        return byFilter and byFilter[auraInstanceID] == true or false
+    end
+
     environment.C_UnitAuras = {
         GetAuraApplicationDisplayCount = forbiddenAuraEnumeration,
         GetAuraDataByAuraInstanceID = forbiddenAuraEnumeration,
         GetAuraDispelTypeColor = forbiddenAuraEnumeration,
         GetAuraDuration = forbiddenAuraEnumeration,
-        GetUnitAuraInstanceIDs = forbiddenAuraEnumeration,
-        IsAuraFilteredOutByInstanceID = forbiddenAuraEnumeration,
+        GetUnitAuraInstanceIDs = getUnitAuraInstanceIDs,
+        IsAuraFilteredOutByInstanceID = isAuraFilteredOut,
         SwitchAuraDataProvider = function()
             state.auraDataProviderSwitchCalls = state.auraDataProviderSwitchCalls + 1
             error("adapter must not own the native aura data provider", 2)
@@ -467,7 +561,33 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
                 record(calls, "SetUpdateInterval", ...)
             end
 
+            function binding:SetFontString(...)
+                record(calls, "SetFontString", ...)
+            end
+
+            function binding:SetDuration(...)
+                record(calls, "SetDuration", ...)
+            end
+
+            function binding:Enable(...)
+                record(calls, "Enable", ...)
+            end
+
+            function binding:Disable(...)
+                record(calls, "Disable", ...)
+            end
+
             return binding
+        end,
+        CreateDuration = function()
+            local duration = {
+                calls = {},
+            }
+            state.durations[#state.durations + 1] = duration
+            function duration:SetTimeFromStart(...)
+                record(self.calls, "SetTimeFromStart", ...)
+            end
+            return duration
         end,
     }
     environment.C_CurveUtil = {
@@ -484,6 +604,7 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
     environment.C_AuraContainerUtil = {
         ProcessCustomAuraButtonApplicationCountOptions = function() end,
         ProcessCustomAuraButtonDispelTypeTextureOptions = function() end,
+        ProcessCustomAuraButtonDurationBarOptions = function() end,
         ProcessCustomAuraButtonDurationTextOptions = function() end,
     }
     environment.AuraContainerSortMethod = {Default = 0}
@@ -509,7 +630,15 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
         StatusBarInterpolation = {Immediate = 0},
         StatusBarTimerDirection = {ElapsedTime = 0},
         CustomAuraButtonDispelTypeTextureStyle = {PreserveAsset = 3},
+        UnitAuraSortRule = {Default = 0},
+        UnitAuraSortDirection = {Normal = 0, Reverse = 1},
     }
+    environment.Mixin = function(target, mixin)
+        for key, value in pairs(mixin) do
+            target[key] = value
+        end
+        return target
+    end
 
     if currentSchema then
         environment.CustomAuraContainerLayoutDefaults = {
@@ -549,7 +678,7 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
             error("capability detection probed CreateFrame", 2)
         end
     else
-        environment.CreateFrame = function(frameType)
+        environment.CreateFrame = function(frameType, _name, parent)
             if frameType == "AuraContainer" then
                 if state.failNextAuraContainerCreation then
                     state.failNextAuraContainerCreation = nil
@@ -565,7 +694,26 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
                     or frameType == "Frame",
                 "unexpected created frame type " .. tostring(frameType)
             )
-            return makeRegion(state.activeButton)
+            local button = state.activeButton or parent
+            if not button or not button.frames then
+                local frame = {
+                    scripts = {},
+                }
+                function frame:SetScript(script, callback)
+                    self.scripts[script] = callback
+                end
+                function frame:UnregisterAllEvents()
+                    self.events = nil
+                end
+                function frame:RegisterUnitEvent(event, unit)
+                    self.events = {event, unit}
+                end
+                return frame
+            end
+            local frame = makeRegion(button)
+            frame.frameType = frameType
+            button.frames[#button.frames + 1] = frame
+            return frame
         end
     end
 
@@ -578,8 +726,9 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
             return 1, 1, 1
         end,
         GetPlainTexture = function()
-            return {}
+            return state.plainTexture
         end,
+        ApplyDefaultBackdrop = function() end,
         SetFrameLevel = function(frame, level, relativeTo)
             frame:SetFrameLevel(level, relativeTo)
         end,
@@ -718,6 +867,7 @@ local buttonStyle = {
     height = 18,
     iconInset = 1,
     desaturated = false,
+    cooldownStyle = "vertical",
     durationText = {
         enabled = true,
         font = {"font", 10, ""},
@@ -780,6 +930,48 @@ assertSnapshotEqual(
 local firstButton = container.buttons[1]
 assert(firstButton.firstBindingSequence > firstButton.lastRegionStyleSequence,
     "custom aura regions were not fully styled before native registration")
+local icon = firstButton.bindings.SetIcon[1]
+local cooldown = firstButton.bindings.SetDurationCooldown[1]
+local durationBarArguments = firstButton.bindings.SetDurationBar
+assertEqual(durationBarArguments.n, 2, "duration bar binding argument count")
+local durationBar = durationBarArguments[1]
+local durationBarOptions = durationBarArguments[2]
+assertEqual(durationBar.frameType, "StatusBar", "duration bar object type")
+assertEqual(
+    durationBarOptions.interpolation,
+    api.Enum.StatusBarInterpolation.Immediate,
+    "duration bar interpolation"
+)
+assertEqual(
+    durationBarOptions.direction,
+    api.Enum.StatusBarTimerDirection.ElapsedTime,
+    "duration bar timer direction"
+)
+assertEqual(cooldown.hideCountdownNumbers, true, "cooldown countdown suppression")
+assertEqual(cooldown.noCooldownCount, true, "third-party countdown suppression")
+assertEqual(cooldown.shown, false, "vertical cooldown sweep visibility")
+assertEqual(cooldown.drawEdge, false, "vertical cooldown edge visibility")
+assertEqual(durationBar.shown, true, "vertical duration bar visibility")
+assertEqual(durationBar.orientation, "VERTICAL", "duration bar orientation")
+assertEqual(durationBar.reverseFill, true, "duration bar reverse fill")
+assertEqual(durationBar.statusBarTexture, state.plainTexture, "duration bar texture")
+assertCall({
+    name = "SetStatusBarColor",
+    args = durationBar.statusBarColor,
+}, "SetStatusBarColor", 0, 0, 0, 0.75)
+assertEqual(icon.shown, true, "vertical icon visibility")
+assertCall({
+    name = "SetFrameLevel",
+    args = cooldown.frameLevel,
+}, "SetFrameLevel", 1, firstButton)
+assertCall({
+    name = "SetFrameLevel",
+    args = durationBar.frameLevel,
+}, "SetFrameLevel", 1, firstButton)
+assertCall({
+    name = "SetFrameLevel",
+    args = firstButton.frames[3].frameLevel,
+}, "SetFrameLevel", 2, firstButton)
 local durationArguments = firstButton.bindings.SetDurationText
 assertEqual(durationArguments.n, 2, "duration binding argument count")
 local durationOptions = durationArguments[2]
@@ -855,7 +1047,15 @@ local slotOptions = {
         y = -9,
     },
 }
-local slotButton = AF.AddCustomAuraSlot(container, "boss", "HARMFUL", slotOptions, buttonStyle)
+local clockButtonStyle = copy(buttonStyle)
+clockButtonStyle.cooldownStyle = "clock_with_leading_edge"
+local slotButton = AF.AddCustomAuraSlot(
+    container,
+    "boss",
+    "HARMFUL",
+    slotOptions,
+    clockButtonStyle
+)
 assertEqual(slotButton, container.buttons[2], "slot return value")
 assertEqual(slotButton.point[1], "BOTTOMRIGHT", "slot anchor point")
 assertEqual(slotButton.point[2], slotAnchorTarget, "slot anchor target identity")
@@ -865,6 +1065,17 @@ assertEqual(slotButton.point[5], -9, "slot anchor y")
 local slotCall = findCall(container.calls, "AddAuraSlot")
 assertEqual(slotCall.args[3].anchor, nil, "AF-only slot anchor forwarded natively")
 assertEqual(slotOptions.anchor.relativeTo, slotAnchorTarget, "caller slot anchor mutated")
+local slotIcon = slotButton.bindings.SetIcon[1]
+local slotCooldown = slotButton.bindings.SetDurationCooldown[1]
+local slotDurationBar = slotButton.bindings.SetDurationBar[1]
+assertEqual(slotCooldown.hideCountdownNumbers, true,
+    "clock cooldown countdown suppression")
+assertEqual(slotCooldown.noCooldownCount, true,
+    "clock third-party countdown suppression")
+assertEqual(slotCooldown.shown, true, "clock cooldown sweep visibility")
+assertEqual(slotCooldown.drawEdge, true, "clock cooldown edge visibility")
+assertEqual(slotDurationBar.shown, false, "clock duration bar visibility")
+assertEqual(slotIcon.shown, true, "clock icon visibility")
 assertSnapshotEqual(
     AF.GetCustomAuraContainerConstructionTotals(),
     expectedConstructionTotals({
@@ -965,6 +1176,165 @@ assertSnapshotEqual(
     beforeLifecycleTuning,
     "container lifecycle tuning must not grow construction"
 )
+
+local legacyAura = AF.InitAura(makeButton(), true)
+local legacyIcon = legacyAura.icon
+local legacyCooldown = legacyAura.cooldown
+local legacyDurationBar = legacyAura.durationBar
+assertEqual(legacyCooldown.hideCountdownNumbers, true,
+    "legacy cooldown countdown suppression")
+assertEqual(legacyCooldown.noCooldownCount, true,
+    "legacy third-party countdown suppression")
+assertEqual(legacyDurationBar.orientation, "VERTICAL",
+    "legacy duration bar orientation")
+assertEqual(legacyDurationBar.reverseFill, true,
+    "legacy duration bar reverse fill")
+
+legacyAura:SetCooldownStyle("vertical")
+assertEqual(legacyCooldown.shown, false, "legacy vertical cooldown visibility")
+assertEqual(legacyDurationBar.shown, true,
+    "legacy vertical duration bar visibility")
+assertEqual(legacyIcon.shown, true, "legacy vertical icon visibility")
+assertCall({
+    name = "SetStatusBarColor",
+    args = legacyDurationBar.statusBarColor,
+}, "SetStatusBarColor", 0, 0, 0, 0.75)
+
+local previewIcon = {}
+legacyAura:SetCooldown(100, 25, 2, previewIcon)
+local previewDuration = state.durations[#state.durations]
+assertCall(previewDuration.calls[1], "SetTimeFromStart", 100, 25)
+assertCall({
+    name = "SetCooldownFromDurationObject",
+    args = legacyCooldown.cooldownDuration,
+}, "SetCooldownFromDurationObject", previewDuration)
+assertCall({
+    name = "SetTimerDuration",
+    args = legacyDurationBar.timerDuration,
+}, "SetTimerDuration",
+    previewDuration,
+    api.Enum.StatusBarInterpolation.Immediate,
+    api.Enum.StatusBarTimerDirection.ElapsedTime)
+
+legacyAura:SetCooldownStyle("block_vertical")
+assertEqual(legacyCooldown.shown, false,
+    "legacy block vertical cooldown visibility")
+assertEqual(legacyDurationBar.shown, true,
+    "legacy block vertical duration bar visibility")
+assertEqual(legacyIcon.shown, false,
+    "legacy block vertical icon visibility")
+assertCall({
+    name = "SetStatusBarColor",
+    args = legacyDurationBar.statusBarColor,
+}, "SetStatusBarColor", 0.5, 0.5, 0.5, 1)
+
+legacyAura:SetCooldownStyle("clock_with_leading_edge")
+assertEqual(legacyCooldown.shown, true, "legacy clock cooldown visibility")
+assertEqual(legacyCooldown.drawEdge, true, "legacy clock leading edge")
+assertEqual(legacyDurationBar.shown, false,
+    "legacy clock duration bar visibility")
+assertEqual(legacyIcon.shown, true, "legacy clock icon visibility")
+
+legacyAura:SetCooldownStyle("block_clock")
+assertEqual(legacyCooldown.shown, true,
+    "legacy block clock cooldown visibility")
+assertEqual(legacyCooldown.drawEdge, false,
+    "legacy block clock leading edge")
+assertEqual(legacyDurationBar.shown, false,
+    "legacy block clock duration bar visibility")
+assertEqual(legacyIcon.shown, false,
+    "legacy block clock icon visibility")
+
+legacyAura:SetCooldownStyle("none")
+assertEqual(legacyCooldown.shown, false, "legacy no-cooldown visibility")
+assertEqual(legacyDurationBar.shown, false,
+    "legacy no-duration-bar visibility")
+assertEqual(legacyIcon.shown, true, "legacy no-cooldown icon visibility")
+
+local function makeAuraListSlot()
+    local slot = {
+        setCalls = {},
+        clearCount = 0,
+    }
+    function slot:SetAura(...)
+        self.setCalls[#self.setCalls + 1] = pack(...)
+    end
+    function slot:ClearAura()
+        self.clearCount = self.clearCount + 1
+    end
+    return slot
+end
+
+state.allowLegacyAuraEnumeration = true
+state.auraInstanceIDs = {101, 102, 103}
+state.filteredOut.PLAYER = {
+    [102] = true,
+    [103] = true,
+}
+local auraList = AF.CreateSecretAuraList({}, "AFMatchRuleList", "HELPFUL")
+auraList.unit = "target"
+auraList.maxCount = 3
+auraList.slots = {
+    makeAuraListSlot(),
+    makeAuraListSlot(),
+    makeAuraListSlot(),
+}
+auraList:SetMatchFilters({"PLAYER"})
+auraList:RefreshAuras()
+assertEqual(auraList.numAuras, 1, "string match-filter count")
+assertCall({
+    name = "SetAura",
+    args = auraList.slots[1].setCalls[1],
+}, "SetAura", "target", 101)
+assertEqual(#auraList.slots[2].setCalls, 0, "string filtered slot")
+
+state.auraFilterCalls = {}
+for _, slot in ipairs(auraList.slots) do
+    slot.setCalls = {}
+    slot.clearCount = 0
+end
+auraList:SetMatchFilters({
+    {
+        filterString = "PLAYER",
+        matchWhenFilteredOut = true,
+    },
+})
+auraList:RefreshAuras()
+assertEqual(auraList.numAuras, 2, "complement match-filter count")
+assertCall({
+    name = "SetAura",
+    args = auraList.slots[1].setCalls[1],
+}, "SetAura", "target", 102)
+assertCall({
+    name = "SetAura",
+    args = auraList.slots[2].setCalls[1],
+}, "SetAura", "target", 103)
+for _, call in ipairs(state.auraFilterCalls) do
+    if call.name == "IsAuraFilteredOutByInstanceID" then
+        assertEqual(call.args[3], "PLAYER",
+            "complement match-filter C-side token")
+    end
+end
+
+-- Test-only pcall verifies trusted descriptor validation; no aura values are
+-- passed through these deterministic configuration assertions.
+local invalidMatchRules = {
+    {42},
+    {{matchWhenFilteredOut = true}},
+    {{filterString = "", matchWhenFilteredOut = true}},
+    {{filterString = "PLAYER", matchWhenFilteredOut = false}},
+    {{
+        filterString = "PLAYER",
+        matchWhenFilteredOut = true,
+        predicate = function() end,
+    }},
+}
+for index, matchRules in ipairs(invalidMatchRules) do
+    local accepted = pcall(auraList.SetMatchFilters, auraList, matchRules)
+    assertEqual(accepted, false, "invalid match-rule descriptor " .. index)
+end
+-- Existing string rules retain their prior permissive shape.
+auraList:SetMatchFilters({""})
 
 -- Test-only pcall captures AF's expected non-secret reserved-option assertion.
 local beforeInvalidSlot = AF.GetCustomAuraContainerConstructionTotals()
