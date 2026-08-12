@@ -1,3 +1,7 @@
+r40:
+
+- Apply low-time duration text colours through Blizzard's native seconds or percentage duration binding, keeping opaque aura timing out of addon Lua.
+
 r39:
 
 - Register only the selected graphical duration carrier on each Retail 12.1 native AuraButton, preventing Blizzard's circular swipe from appearing alongside vertical and Block styles.

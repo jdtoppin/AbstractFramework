@@ -439,8 +439,10 @@ end
 ---------------------------------------------------------------------
 -- Retail 12.1.0.69273 (wow-ui-source eb941aad) replaces Retail's
 -- SecureAuraHeaderTemplate with externally-instantiable AuraContainer and
--- CustomAuraButton intrinsics. Check the current exported schema rather than
--- probing protected frame creation or accepting the incompatible 68824 API.
+-- CustomAuraButton intrinsics. Its duration-text schema accepts a native
+-- LuaColorCurveObject plus Enum.DurationTextBindingProperty. Check the current
+-- exported schema rather than probing protected frame creation or accepting
+-- the incompatible 68824 API.
 local customAuraContainerLayoutDefaults = _G.CustomAuraContainerLayoutDefaults
 local customAuraGroupDefaults = _G.CustomAuraContainerGroupDefaultOptions
 local customAuraGroupLayoutDefaults = _G.CustomAuraContainerGroupLayoutDefaultOptions
@@ -448,6 +450,8 @@ local customAuraSlotDefaults = _G.CustomAuraContainerSlotDefaultOptions
 local customItemEnchantmentDefaults = _G.CustomAuraContainerItemEnchantmentDefaultOptions
 local customItemEnchantmentLayoutDefaults = _G.CustomAuraContainerItemEnchantmentLayoutDefaultOptions
 local customDispelTypeTextureStyle = _G.Enum and Enum.CustomAuraButtonDispelTypeTextureStyle
+local durationTextBindingProperty = _G.Enum and Enum.DurationTextBindingProperty
+local luaCurveType = _G.Enum and Enum.LuaCurveType
 
 AF.hasCustomAuraContainer = _G.C_AuraContainerUtil ~= nil
     and C_AuraContainerUtil.ProcessCustomAuraButtonApplicationCountOptions ~= nil
@@ -474,6 +478,14 @@ AF.hasCustomAuraContainer = _G.C_AuraContainerUtil ~= nil
     and _G.AnchorUtil ~= nil
     and AnchorUtil.FlowLayoutAxis ~= nil
     and AnchorUtil.FlowDirection ~= nil
+    and _G.C_CurveUtil ~= nil
+    and C_CurveUtil.CreateColorCurve ~= nil
+    and _G.CreateColor ~= nil
+    and luaCurveType ~= nil
+    and luaCurveType.Step ~= nil
+    and durationTextBindingProperty ~= nil
+    and durationTextBindingProperty.RemainingDuration ~= nil
+    and durationTextBindingProperty.RemainingPercent ~= nil
     and customDispelTypeTextureStyle ~= nil
     and customDispelTypeTextureStyle.PreserveAsset ~= nil
 
@@ -571,6 +583,65 @@ local function CreateCustomAuraDurationTextBinding()
     binding:SetZeroDurationText("")
     binding:SetUpdateInterval(0.1)
     return binding
+end
+
+local function IsFiniteNumber(value)
+    return type(value) == "number"
+        and value == value
+        and value ~= math.huge
+        and value ~= -math.huge
+end
+
+local function IsNormalizedColor(color)
+    if type(color) ~= "table" then return false end
+
+    for index = 1, 3 do
+        local component = color[index]
+        if not IsFiniteNumber(component) or component < 0 or component > 1 then
+            return false
+        end
+    end
+
+    local alpha = color[4]
+    return alpha == nil
+        or IsFiniteNumber(alpha) and alpha >= 0 and alpha <= 1
+end
+
+-- Retail 12.1.0.69273 DurationTextBindingSharedDocumentation exposes one
+-- sampled property for each native text-color curve. A valid descriptor colors
+-- values below the threshold and returns to the configured normal color at the
+-- threshold. Invalid descriptors deliberately keep the static normal color.
+local function CreateCustomAuraDurationTextColorOptions(config)
+    local color = type(config) == "table" and config.color
+    local threshold = type(color) == "table" and color.threshold
+    if threshold == nil then return nil end
+    if type(threshold) ~= "table"
+        or not IsNormalizedColor(color.normal)
+        or not IsNormalizedColor(threshold.rgb)
+        or not IsFiniteNumber(threshold.value)
+        or threshold.value <= 0
+    then
+        return nil
+    end
+
+    local property
+    if threshold.mode == "seconds" then
+        property = durationTextBindingProperty.RemainingDuration
+    elseif threshold.mode == "percent" and threshold.value <= 1 then
+        property = durationTextBindingProperty.RemainingPercent
+    else
+        return nil
+    end
+
+    local curve = C_CurveUtil.CreateColorCurve()
+    curve:SetType(luaCurveType.Step)
+    curve:AddPoint(0, CreateColor(AF.UnpackColor(threshold.rgb)))
+    curve:AddPoint(threshold.value, CreateColor(AF.UnpackColor(color.normal)))
+
+    return {
+        curve = curve,
+        property = property,
+    }
 end
 
 local function InitializeCustomAuraButton(button, style, anchor)
@@ -695,9 +766,13 @@ local function InitializeCustomAuraButton(button, style, anchor)
         button:SetDurationCooldown(cooldown)
     end
     if durationText then
-        button:SetDurationText(durationText, {
+        local options = {
             binding = CreateCustomAuraDurationTextBinding(),
-        })
+        }
+        options.textColor = CreateCustomAuraDurationTextColorOptions(
+            style.durationText
+        )
+        button:SetDurationText(durationText, options)
     end
     if stackText then
         button:SetApplicationCount(stackText)
