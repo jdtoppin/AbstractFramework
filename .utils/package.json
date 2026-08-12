@@ -1,0 +1,12 @@
+{
+  "name": "abstract-framework-icon-tools",
+  "private": true,
+  "description": "Pinned tooling for AbstractFramework's generated icon families.",
+  "scripts": {
+    "check": "node generate_tabler_icons.cjs --check"
+  },
+  "devDependencies": {
+    "sharp": "0.34.5",
+    "svgpath": "2.6.0"
+  }
+}

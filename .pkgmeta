@@ -2,20 +2,51 @@ package-as: AbstractFramework
 enable-nolib-creation: no
 
 externals:
-  Libs/LibStub: https://repos.curseforge.com/wow/libstub/trunk
-  Libs/CallbackHandler-1.0: https://repos.curseforge.com/wow/callbackhandler/trunk/CallbackHandler-1.0
-  Libs/AceComm-3.0: https://repos.curseforge.com/wow/ace3/trunk/AceComm-3.0
-  Libs/LibSerialize: https://github.com/rossnichols/LibSerialize
-  Libs/LibDeflate: https://github.com/SafeteeWoW/LibDeflate
-  Libs/LibCustomGlow-1.0: https://github.com/Stanzilla/LibCustomGlow
-  Libs/LibSharedMedia-3.0: https://repos.curseforge.com/wow/libsharedmedia-3-0/trunk/LibSharedMedia-3.0
-  Libs/LibDataBroker-1.1: https://github.com/tekkub/libdatabroker-1-1
-  Libs/LibDBIcon-1.0: https://repos.curseforge.com/wow/libdbicon-1-0/trunk/LibDBIcon-1.0
+  Libs/LibStub:
+    url: https://repos.curseforge.com/wow/libstub/trunk@109
+    type: svn
+  Libs/CallbackHandler-1.0:
+    url: https://repos.curseforge.com/wow/callbackhandler/trunk/CallbackHandler-1.0@26
+    type: svn
+  Libs/AceComm-3.0:
+    url: https://repos.curseforge.com/wow/ace3/trunk/AceComm-3.0@1371
+    type: svn
+  Libs/LibSerialize:
+    url: https://github.com/rossnichols/LibSerialize
+    commit: e89d5055c761f48faa216ba9087d8c2e8bceab8a
+  Libs/LibDeflate:
+    url: https://github.com/SafeteeWoW/LibDeflate
+    commit: afc3b78d12fb3bcfa6b21e5332031ad3d7572e19
+  Libs/LibCustomGlow-1.0:
+    url: https://github.com/Stanzilla/LibCustomGlow
+    commit: 4f8f5c2607d7384b26df9175bb99fa3df891b015
+  Libs/LibSharedMedia-3.0:
+    url: https://repos.curseforge.com/wow/libsharedmedia-3-0/trunk/LibSharedMedia-3.0@164
+    type: svn
+  Libs/LibDataBroker-1.1:
+    url: https://github.com/tekkub/libdatabroker-1-1
+    commit: 1a63ede0248c11aa1ee415187c1f9c9489ce3e02
+  Libs/LibDBIcon-1.0:
+    url: https://repos.curseforge.com/wow/libdbicon-1-0/trunk/LibDBIcon-1.0@155
+    type: svn
   Libs/TaintLess:
     url: https://www.townlong-yak.com/addons.git/taintless
-    commit: default
+    commit: a4f3eda90db124df9fad439e594c3baa20ea9ca2
 
 ignore:
+  - .gitattributes
+  - .github
+  - .gitignore
+  - .kanban
+  - .lint
+  - .luacheckrc
+  - .pkgmeta
+  - .release
+  - .unused
+  - .utils
+  - AGENTS.md
+  - CONTRIBUTING.md
+  - scripts
   - tests
   - Libs/LibStub/tests
   - Libs/LibStub/LibStub.toc
