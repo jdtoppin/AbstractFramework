@@ -1,3 +1,7 @@
+r32:
+
+- Fail closed legacy Retail aura widgets on 12.1 and newer so restricted aura APIs are never used as a native-container fallback.
+
 r31:
 
 - Validate saved mover positions before replacing existing anchors.
