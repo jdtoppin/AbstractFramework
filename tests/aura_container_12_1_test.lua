@@ -508,7 +508,7 @@ local function loadAuraModule(currentSchema, forbidCreateFrame)
         LuaCurveType = {Step = 1},
         StatusBarInterpolation = {Immediate = 0},
         StatusBarTimerDirection = {ElapsedTime = 0},
-        CustomAuraButtonDispelTypeTextureStyle = {PreserveAsset = 4},
+        CustomAuraButtonDispelTypeTextureStyle = {PreserveAsset = 3},
     }
 
     if currentSchema then
@@ -790,7 +790,7 @@ assertEqual(durationOptions.zeroDurationText, nil, "legacy zero-duration option"
 assertEqual(durationOptions.updateInterval, nil, "legacy update-interval option")
 assertEqual(firstButton.bindings.SetApplicationCount.n, 1, "application-count formatter must be absent")
 local dispelOptions = firstButton.bindings.AddDispelTypeTexture[2]
-assertEqual(dispelOptions.style, 4, "dispel texture style")
+assertEqual(dispelOptions.style, 3, "dispel texture style")
 assertEqual(dispelOptions.showWhenHarmful, true, "harmful dispel texture")
 assertEqual(dispelOptions.showWhenHelpful, false, "helpful dispel texture")
 assertEqual(dispelOptions.showWithoutDispelType, false, "untyped dispel texture")
