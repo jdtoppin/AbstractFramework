@@ -744,12 +744,12 @@ local function loadAuraModule(currentSchema, forbidCreateFrame, mutateEnvironmen
             RemainingPercent = 1,
         },
         LuaCurveType = {Step = 1},
-        CustomAuraButtonDispelTypeTextureStyle = {PreserveAsset = 4},
         SecondsFormatterAbbreviation = {OneLetter = 1},
         SecondsFormatterInterval = {Seconds = 1, Days = 4},
         SecondsFormatterIntervalWhitespace = {Strip = 1},
         StatusBarInterpolation = {Immediate = 0},
-        StatusBarTimerDirection = {ElapsedTime = 0, RemainingTime = 1},
+        StatusBarTimerDirection = {ElapsedTime = 0},
+        CustomAuraButtonDispelTypeTextureStyle = {PreserveAsset = 3},
         UnitAuraSortRule = {Default = 0},
         UnitAuraSortDirection = {Normal = 0, Reverse = 1},
     }
@@ -1217,7 +1217,7 @@ assertCall(
 )
 assertEqual(firstButton.bindings.SetApplicationCount.n, 1, "application-count formatter must be absent")
 local dispelOptions = firstButton.bindings.AddDispelTypeTexture[2]
-assertEqual(dispelOptions.style, 4, "dispel texture style")
+assertEqual(dispelOptions.style, 3, "dispel texture style")
 assertEqual(dispelOptions.showWhenHarmful, true, "harmful dispel texture")
 assertEqual(dispelOptions.showWhenHelpful, false, "helpful dispel texture")
 assertEqual(dispelOptions.showWithoutDispelType, false, "untyped dispel texture")

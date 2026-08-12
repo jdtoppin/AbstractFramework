@@ -1,8 +1,15 @@
 name: Lua checks
 
 on:
+  merge_group:
   pull_request:
   push:
+    branches:
+      - main
+
+concurrency:
+  group: lua-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -11,30 +18,28 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Install Lua tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes lua-check luajit ripgrep
+          sudo apt-get install --yes lua5.1 lua-check luajit ripgrep
 
-      - name: Check Lua and policy
+      - name: Verify source
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             mapfile -d '' changed < <(git diff --name-only -z --diff-filter=ACMR "$BASE_SHA...HEAD" -- '*.lua')
-            ./scripts/lint.sh "${changed[@]}"
+            ./scripts/verify.sh "${changed[@]}"
+          elif [[ -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]] && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            mapfile -d '' changed < <(git diff --name-only -z --diff-filter=ACMR "$BEFORE_SHA...HEAD" -- '*.lua')
+            ./scripts/verify.sh "${changed[@]}"
           else
-            ./scripts/lint.sh
+            ./scripts/verify.sh
           fi
-
-      - name: Test 12.1 aura container contract
-        run: luajit tests/aura_container_12_1_test.lua
-
-      - name: Test unit class resolution
-        run: luajit tests/unit_class_base_test.lua
