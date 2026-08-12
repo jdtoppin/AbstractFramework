@@ -114,6 +114,10 @@ local function makeRegion(button)
         style("SetAllPoints", ...)
     end
 
+    function region:SetPoint(...)
+        style("SetPoint", ...)
+    end
+
     function region:SetColorTexture(...)
         self.colorTexture = pack(...)
         style("SetColorTexture", ...)
@@ -130,6 +134,21 @@ local function makeRegion(button)
     function region:SetTexture(...)
         self.texture = ...
         style("SetTexture", ...)
+    end
+
+    function region:SetAtlas(...)
+        self.atlas = pack(...)
+        style("SetAtlas", ...)
+    end
+
+    function region:SetAlpha(...)
+        self.alpha = pack(...)
+        style("SetAlpha", ...)
+    end
+
+    function region:SetBlendMode(...)
+        self.blendMode = pack(...)
+        style("SetBlendMode", ...)
     end
 
     function region:SetShown(shown)
@@ -269,8 +288,19 @@ local function makeButton(state)
         return canAccess()
     end
 
-    function button:SetSize()
+    function button:SetSize(...)
         style()
+        button.size = pack(...)
+    end
+
+    function button:SetAllPoints(...)
+        style()
+        button.allPoints = pack(...)
+    end
+
+    function button:SetFrameLevel(...)
+        style()
+        button.frameLevel = pack(...)
     end
 
     function button:ClearAllPoints()
@@ -283,9 +313,10 @@ local function makeButton(state)
         button.point = pack(...)
     end
 
-    function button:CreateTexture()
+    function button:CreateTexture(...)
         style()
         local region = makeRegion(button)
+        region.createArguments = pack(...)
         button.regions[#button.regions + 1] = region
         return region
     end
@@ -514,6 +545,7 @@ local function loadAuraModule(currentSchema, forbidCreateFrame, mutateEnvironmen
         allowLegacyAuraEnumeration = false,
         auraDataProviderSwitchCalls = 0,
         auraDataProviderResetCalls = 0,
+        forbiddenAuraEnumerationCalls = 0,
         plainTexture = {},
     }
     local environment = {}
@@ -521,6 +553,8 @@ local function loadAuraModule(currentSchema, forbidCreateFrame, mutateEnvironmen
     environment._G = environment
 
     local function forbiddenAuraEnumeration()
+        state.forbiddenAuraEnumerationCalls =
+            state.forbiddenAuraEnumerationCalls + 1
         error("12.1 adapter invoked manual C_UnitAuras enumeration", 2)
     end
 
@@ -809,6 +843,11 @@ local function loadAuraModule(currentSchema, forbidCreateFrame, mutateEnvironmen
 
     local framework = {
         Copy = copy,
+        funcs = {
+            isValueNonSecret = function(value)
+                return type(value) ~= "table" or not value.secret
+            end,
+        },
         GetColorRGB = function()
             return 0.1, 0.2, 0.3, 1
         end,
@@ -1980,5 +2019,230 @@ for index, threshold in ipairs(malformedThresholds) do
         0.75
     )
 end
+
+local overlayAF, overlayState, overlayAPI = loadAuraModule(true, false)
+local overlayContainer = overlayAF.CreateCustomAuraContainer(
+    {},
+    "AFDispelOverlayContainer",
+    "party1"
+)
+local overlayBounds = {frameLevel = 12}
+function overlayBounds:GetFrameLevel()
+    return self.frameLevel
+end
+local overlayCandidateFilters = {
+    includeDispelTypes = {
+        Magic = true,
+        Poison = true,
+    },
+}
+local overlaySlotOptions = {
+    candidateFilters = overlayCandidateFilters,
+    sortMethod = overlayAPI.AuraContainerSortMethod.Default,
+    sortDirection = overlayAPI.AuraContainerSortDirection.Normal,
+    anchor = {
+        matchAnchorBounds = true,
+        relativeTo = overlayBounds,
+    },
+}
+local overlayColorCurve = {opaqueNativeCurve = true}
+local overlayDispelOptions = {
+    showWhenHarmful = true,
+    showWhenHelpful = false,
+    showWithoutDispelType = false,
+    customDispelColorCurve = overlayColorCurve,
+}
+local overlayStyle = {
+    texture = "Interface\\AddOns\\AbstractFramework\\Media\\Textures\\Gradient_Linear_Bottom",
+    alpha = 0.45,
+    blendMode = "ADD",
+    drawLayer = "ARTWORK",
+    frameLevelOffset = 2,
+    subLevel = 3,
+    dispelTypeTextureOptions = overlayDispelOptions,
+}
+
+-- The native initializer remains available while the managed button itself is
+-- still unrestricted. Its success also proves that no forbidden aura read was
+-- used to build the presentation while auras are secret.
+overlayState.aurasSecret = true
+local overlayButton = overlayAF.AddCustomAuraDispelOverlaySlot(
+    overlayContainer,
+    "dispelHighlight",
+    "HARMFUL|RAID",
+    overlaySlotOptions,
+    overlayStyle
+)
+assertEqual(#overlayState.containers, 1,
+    "dispel overlay must reuse the supplied container")
+assertEqual(overlayButton, overlayContainer.buttons[1],
+    "dispel overlay slot return value")
+assertEqual(overlayButton.size, nil,
+    "bounds-matching overlay duplicated static size")
+assertCall({
+    name = "SetAllPoints",
+    args = overlayButton.allPoints,
+}, "SetAllPoints", overlayBounds)
+assertCall({
+    name = "SetFrameLevel",
+    args = overlayButton.frameLevel,
+}, "SetFrameLevel", 14)
+assertEqual(#overlayButton.regions, 1,
+    "overlay-only button child region count")
+assertEqual(#overlayButton.frames, 0,
+    "overlay-only button child frame count")
+assertEqual(next(overlayButton.scripts), nil,
+    "overlay-only button script installation")
+assertEqual(overlayButton.bindings.SetIcon, nil,
+    "overlay-only button icon binding")
+assertEqual(overlayButton.bindings.SetDurationCooldown, nil,
+    "overlay-only button cooldown binding")
+assertEqual(overlayButton.bindings.SetDurationBar, nil,
+    "overlay-only button duration-bar binding")
+assertEqual(overlayButton.bindings.SetDurationText, nil,
+    "overlay-only button duration-text binding")
+assertEqual(overlayButton.bindings.SetApplicationCount, nil,
+    "overlay-only button application-count binding")
+assertEqual(overlayButton.bindings.SetTooltipAnchorPoint, nil,
+    "overlay-only button tooltip binding")
+assertCall({
+    name = "EnableMouse",
+    args = overlayButton.bindings.EnableMouse,
+}, "EnableMouse", false)
+
+local overlayTexture = overlayButton.regions[1]
+assertCall({
+    name = "CreateTexture",
+    args = overlayTexture.createArguments,
+}, "CreateTexture", nil, "ARTWORK", nil, 3)
+assertCall(findCall(overlayTexture.calls, "SetAllPoints"),
+    "SetAllPoints", overlayButton)
+assertCall(findCall(overlayTexture.calls, "SetTexture"),
+    "SetTexture", overlayStyle.texture)
+assertCall(findCall(overlayTexture.calls, "SetAlpha"),
+    "SetAlpha", 0.45)
+assertCall(findCall(overlayTexture.calls, "SetBlendMode"),
+    "SetBlendMode", "ADD")
+local overlayBinding = overlayButton.bindings.AddDispelTypeTexture
+assertEqual(overlayBinding[1], overlayTexture,
+    "native dispel texture identity")
+assert(overlayBinding[2] ~= overlayDispelOptions,
+    "native dispel options were not copied")
+assertEqual(overlayBinding[2].style,
+    overlayAPI.Enum.CustomAuraButtonDispelTypeTextureStyle.PreserveAsset,
+    "native dispel texture default style")
+assertEqual(overlayBinding[2].showWhenHarmful, true,
+    "native dispel harmful default")
+assertEqual(overlayBinding[2].showWhenHelpful, false,
+    "native dispel helpful default")
+assertEqual(overlayBinding[2].showWithoutDispelType, false,
+    "native dispel untyped default")
+assertEqual(overlayBinding[2].customDispelColorCurve, overlayColorCurve,
+    "native dispel color-curve identity")
+assert(overlayButton.firstBindingSequence > overlayButton.lastRegionStyleSequence,
+    "dispel overlay styling must precede native registration")
+assertEqual(overlayState.forbiddenAuraEnumerationCalls, 0,
+    "dispel overlay forbidden aura reads")
+
+local overlaySlotCall = findCall(overlayContainer.calls, "AddAuraSlot")
+local copiedOverlaySlotOptions = overlaySlotCall.args[3]
+assertEqual(copiedOverlaySlotOptions.anchor, nil,
+    "AF-only dispel overlay anchor forwarded natively")
+assert(copiedOverlaySlotOptions ~= overlaySlotOptions,
+    "dispel overlay slot options were not copied")
+assert(copiedOverlaySlotOptions.candidateFilters ~= overlayCandidateFilters,
+    "dispel overlay candidate filters were not copied")
+assertEqual(overlaySlotOptions.initializeFrame, nil,
+    "caller dispel overlay slot options mutated")
+assertEqual(overlaySlotOptions.anchor.relativeTo, overlayBounds,
+    "caller bounds anchor identity mutated")
+assertEqual(overlayStyle.dispelTypeTextureOptions, overlayDispelOptions,
+    "caller overlay style nested table replaced")
+assertEqual(overlayDispelOptions.style, nil,
+    "caller dispel options default injected")
+assertEqual(overlayDispelOptions.customDispelColorCurve, overlayColorCurve,
+    "caller dispel color curve mutated")
+assertSnapshotEqual(
+    overlayAF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals({
+        containerCreateAttempts = 1,
+        containerAllocations = 1,
+        containerCreateCompletions = 1,
+        trackedContainers = 1,
+        slotAddAttempts = 1,
+        slotsAdded = 1,
+        initialFrameReservationsAttempted = 1,
+        initialFrameReservationsCompleted = 1,
+    }),
+    "dispel overlay construction totals"
+)
+
+overlayState.aurasSecret = false
+local pointAnchorTarget = {frameLevel = 7}
+function pointAnchorTarget:GetFrameLevel()
+    return self.frameLevel
+end
+local solidColor = {1, 1, 1, 0.75}
+local solidOverlayStyle = {
+    width = 120,
+    height = 20,
+    solidColor = solidColor,
+}
+local solidOverlayButton = overlayAF.AddCustomAuraDispelOverlaySlot(
+    overlayContainer,
+    "allDispelHighlight",
+    "HARMFUL|DISPELLABLE",
+    {
+        anchor = {
+            point = "CENTER",
+            relativeTo = pointAnchorTarget,
+            relativePoint = "CENTER",
+            x = 2,
+            y = -1,
+        },
+    },
+    solidOverlayStyle
+)
+assertCall({
+    name = "SetSize",
+    args = solidOverlayButton.size,
+}, "SetSize", 120, 20)
+assertCall({
+    name = "SetPoint",
+    args = solidOverlayButton.point,
+}, "SetPoint", "CENTER", pointAnchorTarget, "CENTER", 2, -1)
+assertCall({
+    name = "SetFrameLevel",
+    args = solidOverlayButton.frameLevel,
+}, "SetFrameLevel", 7)
+local solidOverlayTexture = solidOverlayButton.regions[1]
+assertCall({
+    name = "SetColorTexture",
+    args = solidOverlayTexture.colorTexture,
+}, "SetColorTexture", 1, 1, 1, 0.75)
+assertCall({
+    name = "EnableMouse",
+    args = solidOverlayButton.bindings.EnableMouse,
+}, "EnableMouse", false)
+assertEqual(solidOverlayStyle.solidColor, solidColor,
+    "caller solid overlay color table replaced")
+assertEqual(#overlayState.containers, 1,
+    "second dispel overlay allocated an extra container")
+assertEqual(overlayState.forbiddenAuraEnumerationCalls, 0,
+    "solid dispel overlay forbidden aura reads")
+assertSnapshotEqual(
+    overlayAF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals({
+        containerCreateAttempts = 1,
+        containerAllocations = 1,
+        containerCreateCompletions = 1,
+        trackedContainers = 1,
+        slotAddAttempts = 2,
+        slotsAdded = 2,
+        initialFrameReservationsAttempted = 2,
+        initialFrameReservationsCompleted = 2,
+    }),
+    "second dispel overlay construction totals"
+)
 
 print("aura_container_12_1_test: OK")

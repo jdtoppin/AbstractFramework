@@ -1,3 +1,7 @@
+r41:
+
+- Add a scriptless native dispel-overlay AuraSlot primitive for unit-frame health-bar colouring without exposing aura data to addon Lua.
+
 r40:
 
 - Apply low-time duration text colours through Blizzard's native seconds or percentage duration binding, keeping opaque aura timing out of addon Lua.
