@@ -10,6 +10,24 @@ local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
 local STATUS_BAR_IMMEDIATE = Enum.StatusBarInterpolation.Immediate
 local STATUS_BAR_ELAPSED_TIME = Enum.StatusBarTimerDirection.ElapsedTime
 
+-- Retail 12.1.0.69273 (wow-ui-source eb941aad) marks every general
+-- unit-aura enumeration and instance-ID API RequiresUnitAuraAccess with
+-- FailureMode=Error. This is a static client boundary, not a combat or
+-- secrecy probe: live Retail 12.1 rows must use AuraContainers, and an
+-- unavailable native backend must leave legacy widgets inert. Unknown future
+-- Retail interfaces fail closed; pre-12.1 Retail keeps its compatibility path.
+local RETAIL_12_1_INTERFACE_MIN = 120100
+local function CanEnumerateLegacyUnitAuras()
+    if not AF.isRetail then return true end
+
+    local _, _, _, interfaceVersion = GetBuildInfo()
+    interfaceVersion = tonumber(interfaceVersion)
+    return interfaceVersion ~= nil
+        and interfaceVersion < RETAIL_12_1_INTERFACE_MIN
+end
+
+local canEnumerateLegacyUnitAuras = CanEnumerateLegacyUnitAuras()
+
 local durationFormatter = C_StringUtil.CreateNumericRuleFormatter()
 durationFormatter:SetBreakpoints({
     {
@@ -52,6 +70,7 @@ local function CreateAuraDurationBar(parent, anchor)
     durationBar:SetStatusBarTexture(AF.GetPlainTexture())
     durationBar:SetStatusBarColor(0, 0, 0, 0.75)
     durationBar:Hide()
+
     return durationBar
 end
 
@@ -114,6 +133,11 @@ local function SetAuraTimer(aura, duration)
 end
 
 function AF_SecretAuraMixin:SetAura(unit, auraInstanceID)
+    if not canEnumerateLegacyUnitAuras then
+        self:ClearAura()
+        return
+    end
+
     self.unit = unit
     self.auraInstanceID = auraInstanceID
     self.inventorySlot = nil
@@ -299,9 +323,9 @@ function AF.InitAura(button, noBorder, visibilityManagedExternally)
     cooldown.noCooldownCount = true
     cooldown:SetUseAuraDisplayTime(true)
 
-    -- Retail 12.0.7.68887 and 12.1.0.68914
-    -- SimpleStatusBar:SetTimerDuration accept an opaque LuaDurationObject as a
-    -- secret argument, keeping vertical timing native.
+    -- Retail 12.0.7.68887 and Retail 12.1.0.69273 (wow-ui-source eb941aad)
+    -- SimpleStatusBar:SetTimerDuration accepts an opaque LuaDurationObject as
+    -- a secret argument, keeping vertical timing native.
     local durationBar = CreateAuraDurationBar(button, icon)
     button.durationBar = durationBar
 
@@ -345,7 +369,7 @@ end
 ---------------------------------------------------------------------
 -- Retail 12.1 custom aura containers
 ---------------------------------------------------------------------
--- Retail 12.1.0.68914 (wow-ui-source d3915c78) replaces Retail's
+-- Retail 12.1.0.69273 (wow-ui-source eb941aad) replaces Retail's
 -- SecureAuraHeaderTemplate with externally-instantiable AuraContainer and
 -- CustomAuraButton intrinsics. Check the current exported schema rather than
 -- probing protected frame creation or accepting the incompatible 68824 API.
@@ -420,7 +444,7 @@ local customAuraContainerConstructionCounterFields = {
 -- around reload/build scenarios without changing the observed lifecycle.
 local customAuraContainerConstructionRecords = setmetatable({}, {__mode = "k"})
 
--- Retail 12.1.0.68914 (wow-ui-source d3915c78) reserves ten frames in
+-- Retail 12.1.0.69273 (wow-ui-source eb941aad) reserves ten frames in
 -- AddAuraGroup's initial batch and one frame for each slot/enchantment.
 -- Initializer callbacks for later lazy group batches are deliberately excluded.
 local customAuraGroupInitialFrameReservation = 10
@@ -983,6 +1007,13 @@ function AF_SecretAuraListMixin:SetMaxCount(maxCount)
 end
 
 function AF_SecretAuraListMixin:RefreshAuras()
+    if not canEnumerateLegacyUnitAuras then
+        ClearAuraList(self)
+        ClearAuraList(self.partitionList)
+        self:OnAurasUpdated(0, 0, 0)
+        return
+    end
+
     if not self.unit or not self.filter or not self.maxCount then return end
 
     self:OnBeforeAurasRefresh()
@@ -1074,7 +1105,7 @@ end
 
 function AF_SecretAuraListMixin:RegisterUnitEvents()
     self:UnregisterAllEvents()
-    if self.unit then
+    if canEnumerateLegacyUnitAuras and self.unit then
         self:RegisterUnitEvent("UNIT_AURA", self.unit)
     end
 end
