@@ -10,10 +10,13 @@ local GetUnitAuraInstanceIDs = C_UnitAuras.GetUnitAuraInstanceIDs
 local IsAuraFilteredOutByInstanceID = C_UnitAuras.IsAuraFilteredOutByInstanceID
 local STATUS_BAR_IMMEDIATE = Enum.StatusBarInterpolation.Immediate
 local STATUS_BAR_ELAPSED_TIME = Enum.StatusBarTimerDirection.ElapsedTime
+local STATUS_BAR_REMAINING_TIME = Enum.StatusBarTimerDirection.RemainingTime
 local DEFAULT_AURA_BLOCK_RED = 0.5
 local DEFAULT_AURA_BLOCK_GREEN = 0.5
 local DEFAULT_AURA_BLOCK_BLUE = 0.5
 local DEFAULT_AURA_BLOCK_ALPHA = 1
+local DEFAULT_AURA_UNDERBAR_HEIGHT = 3
+local DEFAULT_AURA_UNDERBAR_GAP = 1
 
 -- Retail 12.1.0.69273 (wow-ui-source eb941aad) marks every general
 -- unit-aura enumeration and instance-ID API RequiresUnitAuraAccess with
@@ -84,6 +87,52 @@ local function CreateAuraDurationBar(parent, anchor)
     return durationBar
 end
 
+local function CreateAuraDurationUnderbar(parent, icon, style)
+    local durationBar = CreateFrame("StatusBar", nil, parent)
+    AF.SetFrameLevel(durationBar, 1, parent)
+    durationBar:SetPoint(
+        "BOTTOMLEFT",
+        parent,
+        "BOTTOMLEFT",
+        style.inset,
+        style.inset
+    )
+    durationBar:SetPoint(
+        "TOPRIGHT",
+        parent,
+        "BOTTOMRIGHT",
+        -style.inset,
+        style.inset + style.height
+    )
+    durationBar:SetOrientation("HORIZONTAL")
+    durationBar:SetReverseFill(false)
+    durationBar:SetStatusBarTexture(AF.GetPlainTexture())
+    durationBar:SetStatusBarColor(unpack(style.color))
+
+    local background = durationBar:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints(durationBar)
+    background:SetColorTexture(unpack(style.backgroundColor))
+
+    icon:ClearAllPoints()
+    icon:SetPoint(
+        "TOPLEFT",
+        parent,
+        "TOPLEFT",
+        style.inset,
+        -style.inset
+    )
+    icon:SetPoint(
+        "BOTTOMRIGHT",
+        parent,
+        "BOTTOMRIGHT",
+        -style.inset,
+        style.inset + style.height + style.gap
+    )
+    durationBar:Hide()
+
+    return durationBar
+end
+
 local function CopyAuraBlockColor(color)
     if type(color) == "table"
         and type(color[1]) == "number"
@@ -111,7 +160,9 @@ local function CreateAuraBlockBackground(parent, anchor, blockColor)
 end
 
 local function UsesAuraDurationBar(style)
-    return style == "vertical" or style == "block_vertical"
+    return style == "vertical"
+        or style == "block_vertical"
+        or style == "icon_duration_bar"
 end
 
 local function UsesAuraDurationCooldown(style)
@@ -126,7 +177,8 @@ local function SetupAuraCooldownStyle(
     style,
     blockColor
 )
-    local isVertical = UsesAuraDurationBar(style)
+    local isVertical = style == "vertical" or style == "block_vertical"
+    local isUnderbar = style == "icon_duration_bar"
     local isBlockVertical = style == "block_vertical"
     local isBlockClock = style:find("^block_clock") ~= nil
     local isBlock = isBlockVertical or isBlockClock
@@ -135,8 +187,10 @@ local function SetupAuraCooldownStyle(
         cooldown:SetDrawEdge(style:find("edge$") ~= nil)
     end
     if durationBar then
-        durationBar:SetShown(isVertical)
-        durationBar:SetStatusBarColor(0, 0, 0, 0.75)
+        durationBar:SetShown(isVertical or isUnderbar)
+        if not isUnderbar then
+            durationBar:SetStatusBarColor(0, 0, 0, 0.75)
+        end
     end
     blockBackground:SetColorTexture(unpack(blockColor))
     blockBackground:SetShown(isBlock)
@@ -608,6 +662,54 @@ local function IsNormalizedColor(color)
         or IsFiniteNumber(alpha) and alpha >= 0 and alpha <= 1
 end
 
+local function CopyCustomAuraDurationUnderbarStyle(source, buttonStyle)
+    assert(source == nil or type(source) == "table",
+        "durationBar must be a table")
+
+    source = source or {}
+    local supportedKeys = {
+        backgroundColor = true,
+        color = true,
+        gap = true,
+        height = true,
+        inset = true,
+    }
+    for key in pairs(source) do
+        assert(supportedKeys[key],
+            "unsupported durationBar field: " .. tostring(key))
+    end
+
+    local style = AF.Copy(source)
+    style.height = style.height or DEFAULT_AURA_UNDERBAR_HEIGHT
+    style.gap = style.gap or DEFAULT_AURA_UNDERBAR_GAP
+    style.inset = style.inset or 0
+    style.color = style.color or {1, 1, 1, 1}
+    style.backgroundColor = style.backgroundColor or {0, 0, 0, 0.75}
+
+    assert(IsFiniteNumber(style.height) and style.height > 0,
+        "durationBar.height must be a positive finite number")
+    assert(IsFiniteNumber(style.gap) and style.gap >= 0,
+        "durationBar.gap must be a non-negative finite number")
+    assert(IsFiniteNumber(style.inset) and style.inset >= 0,
+        "durationBar.inset must be a non-negative finite number")
+    assert(IsNormalizedColor(style.color),
+        "durationBar.color must be a normalized RGB or RGBA table")
+    assert(IsNormalizedColor(style.backgroundColor),
+        "durationBar.backgroundColor must be a normalized RGB or RGBA table")
+    assert(IsFiniteNumber(buttonStyle.width)
+            and IsFiniteNumber(buttonStyle.height),
+        "icon_duration_bar requires buttonStyle.width and buttonStyle.height")
+    assert(buttonStyle.iconInset == nil,
+        "icon_duration_bar cannot be combined with buttonStyle.iconInset")
+    assert(buttonStyle.width > style.inset * 2,
+        "icon_duration_bar inset leaves no horizontal content")
+    assert(buttonStyle.height
+            > style.inset * 2 + style.height + style.gap,
+        "icon_duration_bar leaves no vertical icon content")
+
+    return style
+end
+
 -- Retail 12.1.0.69273 DurationTextBindingSharedDocumentation exposes one
 -- sampled property for each native text-color curve. A valid descriptor colors
 -- values below the threshold and returns to the configured normal color at the
@@ -713,7 +815,15 @@ local function InitializeCustomAuraButton(button, style, anchor)
 
     local durationBar
     if UsesAuraDurationBar(cooldownStyle) then
-        durationBar = CreateAuraDurationBar(button, icon)
+        if cooldownStyle == "icon_duration_bar" then
+            durationBar = CreateAuraDurationUnderbar(
+                button,
+                icon,
+                style.durationBar
+            )
+        else
+            durationBar = CreateAuraDurationBar(button, icon)
+        end
     end
     SetupAuraCooldownStyle(
         icon,
@@ -726,7 +836,14 @@ local function InitializeCustomAuraButton(button, style, anchor)
 
     local overlayFrame = CreateFrame("Frame", nil, button)
     AF.SetFrameLevel(overlayFrame, 2, button)
-    overlayFrame:SetAllPoints()
+    if cooldownStyle == "icon_duration_bar" then
+        -- Text and dispel decorations belong to the icon, not the composite
+        -- icon-plus-underbar extent. This keeps bottom-anchored stack text
+        -- above the native timer bar.
+        overlayFrame:SetAllPoints(icon)
+    else
+        overlayFrame:SetAllPoints()
+    end
 
     local durationText
     if style.durationText then
@@ -763,9 +880,15 @@ local function InitializeCustomAuraButton(button, style, anchor)
     -- one, drawing Blizzard's clock and AF's vertical bar together. Attach
     -- only the carrier selected by the construction-owned cooldown style.
     if durationBar then
+        local direction = STATUS_BAR_ELAPSED_TIME
+        if cooldownStyle == "icon_duration_bar" then
+            assert(STATUS_BAR_REMAINING_TIME ~= nil,
+                "RemainingTime status-bar timers are unavailable")
+            direction = STATUS_BAR_REMAINING_TIME
+        end
         button:SetDurationBar(durationBar, {
             interpolation = STATUS_BAR_IMMEDIATE,
-            direction = STATUS_BAR_ELAPSED_TIME,
+            direction = direction,
         })
     elseif cooldown then
         button:SetDurationCooldown(cooldown)
@@ -850,6 +973,12 @@ local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle, anchor, st
         assert(style.tooltip.enabled or not style.cancelAuraButtons,
             "cancelAuraButtons requires mouse-enabled tooltips")
     end
+    if style.cooldownStyle == "icon_duration_bar" then
+        style.durationBar = CopyCustomAuraDurationUnderbarStyle(
+            style.durationBar,
+            style
+        )
+    end
 
     if not style.noBorder then
         style.backdropBorderColor = style.backdropBorderColor or {AF.GetColorRGB("border")}
@@ -919,6 +1048,7 @@ local customAuraDispelOverlayStyleKeys = {
     solidColor = true,
     subLevel = true,
     texture = true,
+    vertexColor = true,
     width = true,
 }
 
@@ -1016,13 +1146,20 @@ local function CopyCustomAuraDispelTextureOptions(source)
     return options
 end
 
-local function CopyCustomAuraDispelOverlayStyle(overlayStyle)
+local function CopyCustomAuraOverlayStyleInternal(
+    overlayStyle,
+    includeDispelOptions
+)
     assert(overlayStyle == nil or type(overlayStyle) == "table",
         "overlayStyle must be a table")
 
     overlayStyle = overlayStyle or {}
     for key in pairs(overlayStyle) do
-        assert(customAuraDispelOverlayStyleKeys[key],
+        assert(customAuraDispelOverlayStyleKeys[key]
+                and (
+                    includeDispelOptions
+                    or key ~= "dispelTypeTextureOptions"
+                ),
             "unsupported overlayStyle field: " .. tostring(key))
     end
 
@@ -1070,6 +1207,11 @@ local function CopyCustomAuraDispelOverlayStyle(overlayStyle)
     assert(overlayStyle.solidColor == nil
             or IsNormalizedColor(overlayStyle.solidColor),
         "overlayStyle.solidColor must be a normalized RGB or RGBA table")
+    assert(overlayStyle.vertexColor == nil
+            or IsNormalizedColor(overlayStyle.vertexColor),
+        "overlayStyle.vertexColor must be a normalized RGB or RGBA table")
+    assert(not (overlayStyle.solidColor and overlayStyle.vertexColor),
+        "solidColor and vertexColor are mutually exclusive")
 
     local textureSourceCount = 0
     for _, key in ipairs({"texture", "atlas", "solidColor"}) do
@@ -1092,17 +1234,27 @@ local function CopyCustomAuraDispelOverlayStyle(overlayStyle)
     style.drawLayer = drawLayer
     style.frameLevelOffset = style.frameLevelOffset or 0
     style.subLevel = style.subLevel or 0
-    style.dispelTypeTextureOptions =
-        CopyCustomAuraDispelTextureOptions(
-            overlayStyle.dispelTypeTextureOptions
-        )
+    if includeDispelOptions then
+        style.dispelTypeTextureOptions =
+            CopyCustomAuraDispelTextureOptions(
+                overlayStyle.dispelTypeTextureOptions
+            )
+    end
     return style
 end
 
-local function GetCustomAuraDispelOverlayAnchor(container, slotOptions)
+local function CopyCustomAuraDispelOverlayStyle(overlayStyle)
+    return CopyCustomAuraOverlayStyleInternal(overlayStyle, true)
+end
+
+local function CopyCustomAuraOverlayStyle(overlayStyle)
+    return CopyCustomAuraOverlayStyleInternal(overlayStyle, false)
+end
+
+local function GetCustomAuraOverlayAnchor(container, slotOptions)
     local anchor = slotOptions and slotOptions.anchor
     assert(type(anchor) == "table",
-        "dispel overlay slots require an anchor table")
+        "overlay slots require an anchor table")
     assert(anchor.matchAnchorBounds == nil
             or type(anchor.matchAnchorBounds) == "boolean",
         "anchor.matchAnchorBounds must be a boolean")
@@ -1119,7 +1271,12 @@ local function GetCustomAuraDispelOverlayAnchor(container, slotOptions)
     return GetCustomAuraSlotAnchor(container, slotOptions)
 end
 
-local function InitializeCustomAuraDispelOverlayButton(button, style, anchor)
+local function InitializeCustomAuraOverlayButton(
+    button,
+    style,
+    anchor,
+    bindDispelType
+)
     if style.width and style.height then
         button:SetSize(style.width, style.height)
     else
@@ -1181,17 +1338,31 @@ local function InitializeCustomAuraDispelOverlayButton(button, style, anchor)
     end
     overlay:SetAlpha(style.alpha)
     overlay:SetBlendMode(style.blendMode)
-    overlay:Hide()
+    if style.vertexColor then
+        overlay:SetVertexColor(unpack(style.vertexColor))
+    end
 
-    -- Retail 12.1.0.69273 (wow-ui-source eb941aad) lets addons configure a
-    -- descendant texture before AddDispelTypeTexture transfers visibility and
-    -- vertex-color ownership to Blizzard. The button carries no scripts,
-    -- tooltip, icon, cooldown, or text and must never intercept unit clicks.
+    -- Retail 12.1.0.69299 (wow-ui-source 31c7f7b9cc79) runs this initializer
+    -- before denying tainted access to secret managed AuraButtons. Generic
+    -- overlays remain scriptless descendants whose visibility is owned solely
+    -- by the native AuraSlot parent. Dispel overlays additionally transfer
+    -- texture visibility and vertex-color ownership to Blizzard below.
+    if bindDispelType then
+        overlay:Hide()
+    else
+        -- A newly allocated AuraSlot is not synchronously cleared by every
+        -- provider path. Start the managed parent hidden so this static child
+        -- cannot flash before Blizzard performs its first assignment; native
+        -- slot ownership will Show the button when a candidate is present.
+        button:Hide()
+    end
     button:EnableMouse(false)
-    button:AddDispelTypeTexture(
-        overlay,
-        style.dispelTypeTextureOptions
-    )
+    if bindDispelType then
+        button:AddDispelTypeTexture(
+            overlay,
+            style.dispelTypeTextureOptions
+        )
+    end
 end
 
 local function GetCustomAuraDispelOverlayOptions(
@@ -1204,7 +1375,18 @@ local function GetCustomAuraDispelOverlayOptions(
     assert(style.width ~= nil or anchor.matchAnchorBounds,
         "a point-anchored dispel overlay requires width and height")
     options.initializeFrame = function(button)
-        InitializeCustomAuraDispelOverlayButton(button, style, anchor)
+        InitializeCustomAuraOverlayButton(button, style, anchor, true)
+    end
+    return options
+end
+
+local function GetCustomAuraOverlayOptions(slotOptions, overlayStyle, anchor)
+    local options = CopyCustomAuraNativeOptions(slotOptions, true)
+    local style = CopyCustomAuraOverlayStyle(overlayStyle)
+    assert(style.width ~= nil or anchor.matchAnchorBounds,
+        "a point-anchored overlay requires width and height")
+    options.initializeFrame = function(button)
+        InitializeCustomAuraOverlayButton(button, style, anchor, false)
     end
     return options
 end
@@ -1216,6 +1398,17 @@ end
 
 ---@return boolean
 function AF.HasNativeDispelColorTexture()
+    return AF.hasCustomAuraContainer
+end
+
+---@return boolean
+function AF.HasCustomAuraIconDurationBar()
+    return AF.hasCustomAuraContainer
+        and STATUS_BAR_REMAINING_TIME ~= nil
+end
+
+---@return boolean
+function AF.HasCustomAuraOverlaySlot()
     return AF.hasCustomAuraContainer
 end
 
@@ -1401,8 +1594,32 @@ function AF.AddCustomAuraDispelOverlaySlot(
 )
     AssertCustomAuraContainer()
 
-    local anchor = GetCustomAuraDispelOverlayAnchor(container, slotOptions)
+    local anchor = GetCustomAuraOverlayAnchor(container, slotOptions)
     local options = GetCustomAuraDispelOverlayOptions(
+        slotOptions,
+        overlayStyle,
+        anchor
+    )
+    return AddPreparedCustomAuraSlot(container, slotKey, filterString, options)
+end
+
+---@param container Frame
+---@param slotKey string
+---@param filterString string
+---@param slotOptions table Native slot options plus an AF-only anchor table.
+---@param overlayStyle? table Construction-owned static overlay presentation.
+---@return Button button
+function AF.AddCustomAuraOverlaySlot(
+    container,
+    slotKey,
+    filterString,
+    slotOptions,
+    overlayStyle
+)
+    AssertCustomAuraContainer()
+
+    local anchor = GetCustomAuraOverlayAnchor(container, slotOptions)
+    local options = GetCustomAuraOverlayOptions(
         slotOptions,
         overlayStyle,
         anchor
