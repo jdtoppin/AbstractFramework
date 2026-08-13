@@ -1,5 +1,6 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
+local F = AF.funcs
 
 ---------------------------------------------------------------------
 -- colors
@@ -342,7 +343,6 @@ function AF.GetItemQualityColor(quality, useDefault)
     return r, g, b
 end
 
-local ADDONS = AF.REGISTERED_ADDONS
 local GetAddon = AF.GetAddon
 
 local function BuildColorTable(color)
@@ -508,6 +508,13 @@ end
 function AF.GetClassColor(class, alpha, factor)
     factor = factor or 1
 
+    -- Accept callers that use UnitClass directly, but never inspect a class
+    -- value whose identity is secret on Retail 12.1.0.69273
+    -- (wow-ui-source eb941aad).
+    if not F.isValueNonSecret(class) then
+        return AF.GetColorRGB("UNKNOWN", alpha, factor)
+    end
+
     if class and COLORS[class] then
         return AF.GetColorRGB(class, alpha, factor)
     end
@@ -517,7 +524,7 @@ function AF.GetClassColor(class, alpha, factor)
         return r * factor, g * factor, b * factor, alpha or 1
     end
 
-    return AF.GetColorRGB("UNKNOWN")
+    return AF.GetColorRGB("UNKNOWN", alpha, factor)
 end
 
 ---@param unit string
@@ -751,7 +758,7 @@ end
 ---@return string gradientText
 function AF.GetGradientText(text, startColor, endColor)
     local gradient = ""
-    local length = string.utf8len(text)
+    local length = string.utf8len(text) -- luacheck: ignore 143
     local r1, g1, b1, r2, g2, b2
 
     if COLORS[startColor] then
@@ -772,7 +779,11 @@ function AF.GetGradientText(text, startColor, endColor)
         g = AF.Interpolate(g1, g2, i, length - 1)
         b = AF.Interpolate(b1, b2, i, length - 1)
         hex = AF.ConvertRGB256ToHEX(r, g, b)
-        gradient = gradient .. "|cff" .. hex .. string.utf8sub(text, i + 1, i + 1) .. "|r"
+        gradient = gradient
+            .. "|cff"
+            .. hex
+            .. string.utf8sub(text, i + 1, i + 1) -- luacheck: ignore 143
+            .. "|r"
     end
 
     return gradient
