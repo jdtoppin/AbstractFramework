@@ -188,6 +188,7 @@ local AF = select(2, ...)
 ---@field ["Poison"] string
 ---@field ["Popups"] string
 ---@field ["Position"] string
+---@field ["Press a key or mouse button"] string
 ---@field ["Prev"] string
 ---@field ["Private Auras"] string
 ---@field ["Profile"] string
@@ -316,7 +317,6 @@ AF.L = setmetatable({
     ["Create"] = _G.CALENDAR_CREATE,
     ["New"] = _G.NEW,
     ["Save"] = _G.SAVE,
-    ["Apply"] = _G.APPLY,
     ["Edit"] = _G.EDIT,
 
     ["Default"] = _G.DEFAULT,
