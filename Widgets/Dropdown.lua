@@ -2,6 +2,7 @@
 local AF = select(2, ...)
 
 local list, horizontalList
+local STANDARD_BUTTON_WIDTH = 18
 
 ---------------------------------------------------------------------
 -- list
@@ -383,7 +384,7 @@ function AF_DropdownMixin:LoadItems()
 
             AF.AddToFontSizeUpdater(b.text)
 
-            function b:Update()
+            function b.Update()
                 --! NOTE: invoked in SetScroll, or text may be "invisible"
                 if b._font then
                     C_Timer.NewTicker(0, function()
@@ -560,10 +561,28 @@ function AF.CreateDropdown(parent, width, maxSlots, miniMode, textureAlpha, just
         AF.SetPoint(dropdown.text, "RIGHT", -5, 0)
         dropdown.text:SetJustifyH(justify or "CENTER")
     else
-        dropdown.button = AF.CreateButton(dropdown, nil, "accent_hover", 18, 20)
+        dropdown.button = AF.CreateButton(
+            dropdown,
+            nil,
+            "accent_hover",
+            STANDARD_BUTTON_WIDTH,
+            20
+        )
         dropdown.button:SetPoint("TOPRIGHT")
         dropdown.button:SetPoint("BOTTOMRIGHT")
         dropdown.button:SetTexture(AF.GetIcon("ArrowDown1"), {16, 16}, {"CENTER", 0, 0})
+        -- Use constructor-owned dimensions for the full-field hit target.
+        -- Retail 12.1.0.68914 marks GetWidth SecretWhenAnchoringSecret, while
+        -- SetHitRectInsets rejects secret arguments (wow-ui-source d3915c78,
+        -- SimpleScriptRegion/SimpleFrame API documentation).
+        if type(width) == "number" then
+            dropdown.button:SetHitRectInsets(
+                min(0, STANDARD_BUTTON_WIDTH - width),
+                0,
+                0,
+                0
+            )
+        end
         -- menu.button:SetBackdropColor(AF.GetColorRGB("none"))
         -- menu.button._color = AF.GetColorTable("none")
 
