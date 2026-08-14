@@ -1,3 +1,8 @@
+r43:
+
+- Add a reusable binding-capture widget for modifier, keyboard, mouse-button, and mouse-wheel chords.
+- Make the complete standard dropdown field clickable while retaining its arrow-button behavior.
+
 r42:
 
 - Add an opt-in native square aura border whose harmful-aura colour is selected privately by Blizzard, including the native None category for untyped effects.
