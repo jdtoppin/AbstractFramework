@@ -176,6 +176,11 @@ function widgetMethods:SetHeight(height)
     self.height = height
 end
 
+function widgetMethods:SetSize(width, height)
+    self.width = width
+    self.height = height
+end
+
 function widgetMethods:SetHitRectInsets(...)
     self.hitRectInsets = {...}
 end
@@ -214,6 +219,8 @@ local AF = {
     UIParent = newWidget("uiParent"),
     L = setmetatable({}, {__index = function(_, key) return key end}),
 }
+AF.FrameSetWidth = widgetMethods.SetWidth
+AF.FrameSetSize = widgetMethods.SetSize
 
 function AF.CreateScrollList(parent)
     local list = newWidget("scrollList", parent)
@@ -308,6 +315,16 @@ assertEqual(dropdown.button.hitRectInsets[2], 0,
     "standard dropdown hit target keeps its right edge")
 assertEqual(dropdown:GetScript("OnMouseDown"), nil,
     "field clicking stays on the canonical dropdown button")
+
+dropdown:SetWidth(60)
+assertEqual(dropdown.button.hitRectInsets[1], -42,
+    "direct width changes keep the hit target inside the dropdown")
+dropdown:SetSize(80, 20)
+assertEqual(dropdown.button.hitRectInsets[1], -62,
+    "direct size changes also refresh the full-field hit target")
+AF.SetWidth(dropdown, 70)
+assertEqual(dropdown.button.hitRectInsets[1], -52,
+    "pixel-helper width changes route through the dropdown wrapper")
 
 dropdown.button:RunScript("OnClick", "LeftButton")
 assertTrue(verticalList:IsShown(), "clicking the dropdown field opens the list")

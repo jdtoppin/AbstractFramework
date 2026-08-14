@@ -169,6 +169,36 @@ end
 ---@class AF_Dropdown:AF_BorderedFrame
 local AF_DropdownMixin = {}
 
+local function UpdateButtonHitRect(dropdown, width)
+    if dropdown.miniMode
+        or not dropdown.button
+        or type(width) ~= "number"
+    then
+        return
+    end
+
+    dropdown.button:SetHitRectInsets(
+        min(0, STANDARD_BUTTON_WIDTH - width),
+        0,
+        0,
+        0
+    )
+end
+
+-- Keep the expanded button aligned with explicit, addon-owned width changes
+-- without reading geometry that may be secret when anchored to a secret frame.
+function AF_DropdownMixin:SetWidth(width)
+    AF.FrameSetWidth(self, width)
+    self.width = width
+    UpdateButtonHitRect(self, width)
+end
+
+function AF_DropdownMixin:SetSize(width, height)
+    AF.FrameSetSize(self, width, height)
+    self.width = width
+    UpdateButtonHitRect(self, width)
+end
+
 -- selection ------------------------------------
 local function SetSelected(dropdown, type, v)
     local found
@@ -571,18 +601,11 @@ function AF.CreateDropdown(parent, width, maxSlots, miniMode, textureAlpha, just
         dropdown.button:SetPoint("TOPRIGHT")
         dropdown.button:SetPoint("BOTTOMRIGHT")
         dropdown.button:SetTexture(AF.GetIcon("ArrowDown1"), {16, 16}, {"CENTER", 0, 0})
-        -- Use constructor-owned dimensions for the full-field hit target.
+        -- Use only addon-owned dimensions for the full-field hit target.
         -- Retail 12.1.0.68914 marks GetWidth SecretWhenAnchoringSecret, while
         -- SetHitRectInsets rejects secret arguments (wow-ui-source d3915c78,
         -- SimpleScriptRegion/SimpleFrame API documentation).
-        if type(width) == "number" then
-            dropdown.button:SetHitRectInsets(
-                min(0, STANDARD_BUTTON_WIDTH - width),
-                0,
-                0,
-                0
-            )
-        end
+        UpdateButtonHitRect(dropdown, width)
         -- menu.button:SetBackdropColor(AF.GetColorRGB("none"))
         -- menu.button._color = AF.GetColorTable("none")
 
