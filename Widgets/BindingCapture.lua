@@ -192,6 +192,9 @@ local activeCapture
 local pendingInputCleanup = {}
 
 local function DisableCaptureInput(self)
+    -- A completed capture must relinquish keyboard ownership before another
+    -- widget (such as an EditBox) receives focus.
+    self:SetPropagateKeyboardInput(true)
     self:EnableKeyboard(false)
     self:EnableMouseWheel(false)
     self._inputCleanupPending = nil

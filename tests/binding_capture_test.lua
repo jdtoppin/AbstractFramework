@@ -205,6 +205,8 @@ assertEqual(capture.justifyH, "CENTER", "capture text alignment")
 assertEqual(capture:GetText(), "Unassigned", "initial placeholder")
 assertEqual(capture.keyboardEnabled, false, "initial keyboard state")
 assertEqual(capture.mouseWheelEnabled, false, "initial wheel state")
+assertEqual(capture.propagateKeyboardInput, true,
+    "inactive capture must not retain keyboard propagation ownership")
 
 local changes = {}
 local captureStates = {}
@@ -238,7 +240,8 @@ capture:RunScript("OnKeyDown", "k")
 assert(not capture:IsCapturing(), "keyboard commit must stop capture")
 assertBinding(capture:GetBinding(), "K", true, false, false, "keyboard capture")
 assertEqual(capture:GetText(), "Alt + K", "keyboard capture display")
-assertEqual(capture.propagateKeyboardInput, false, "captured keyboard input propagation")
+assertEqual(capture.propagateKeyboardInput, true,
+    "completed capture restores keyboard input propagation")
 assertEqual(#changes, 1, "keyboard change callback count")
 assertBinding(changes[1].binding, "K", true, false, false, "keyboard callback binding")
 assertEqual(changes[1].self, capture, "keyboard callback widget")
@@ -261,6 +264,8 @@ assert(capture:IsCapturing(), "invalid SetBinding must preserve capture")
 capture:RunScript("OnKeyDown", "ESCAPE")
 assert(not capture:IsCapturing(), "Escape must cancel")
 assertBinding(capture:GetBinding(), "A", false, true, false, "Escape preserves binding")
+assertEqual(capture.propagateKeyboardInput, true,
+    "cancelled capture restores keyboard input propagation")
 assertEqual(#changes, 1, "Escape callback count")
 assertEqual(captureStates[#captureStates].cancelled, true, "Escape cancellation state")
 
