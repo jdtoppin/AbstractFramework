@@ -465,6 +465,14 @@ AF.CreateMover(validOwner, "Test", "Valid", function()
     saves = saves + 1
 end)
 
+local actionCalls = 0
+local actionOwner = NewFrame("ActionOwner", AF.UIParent)
+AF.CreateMover(actionOwner, "Test", "Action")
+AF.SetMoverAction(actionOwner, function(owner)
+    assertEqual(owner, actionOwner, "action receives its owner")
+    actionCalls = actionCalls + 1
+end, "Open Native Edit Mode")
+
 local unanchoredOwner = NewFrame("UnanchoredOwner", AF.UIParent)
 AF.CreateMover(unanchoredOwner, "Test", "Unanchored")
 
@@ -486,6 +494,49 @@ assertEqual(validOwner.mover._original[1], "CENTER", "captured point")
 assertEqual(validOwner.mover._original[2], 10, "captured rounded x")
 assertEqual(validOwner.mover._original[3], 20.1, "captured rounded y")
 assertEqual(unanchoredOwner.mover._original, nil, "unavailable owner has no undo")
+assertTrue(actionOwner.mover:IsShown(), "action mover shows without an owner point ledger")
+assertEqual(actionOwner.mover._original, nil, "action mover does not create an undo snapshot")
+assertEqual(actionOwner.mover.text:GetText(), "Open Native Edit Mode", "action label is shown")
+
+local actionClearCalls = actionOwner.clearCalls
+actionOwner.mover:RunScript("OnMouseDown", "LeftButton")
+actionOwner.mover:RunScript("OnMouseWheel", 1)
+assertEqual(actionOwner.clearCalls, actionClearCalls, "action ignores wheel movement")
+actionOwner.mover:RunScript("OnMouseUp", "RightButton")
+assertEqual(actionCalls, 0, "action ignores right clicks")
+actionOwner.mover:RunScript("OnMouseDown", "LeftButton")
+actionOwner.mover:RunScript("OnMouseUp", "LeftButton", false)
+assertEqual(actionCalls, 0, "action cancels when the pointer leaves its mover")
+actionOwner.mover:RunScript("OnMouseDown", "LeftButton")
+actionOwner.mover:RunScript("OnMouseUp", "LeftButton", true)
+assertEqual(actionCalls, 1, "action runs on left release")
+assertFalse(moverParent:IsShown(), "action closes mover editing before activation")
+assertEqual(actionOwner.clearCalls, actionClearCalls, "action never reanchors its owner")
+
+AF.ShowMovers()
+actionOwner.mover:RunScript("OnMouseDown", "LeftButton")
+assertTrue(actionOwner.mover.actionPressed, "action press is tracked before combat")
+inCombat = true
+moverParent:RunScript("OnEvent", "PLAYER_REGEN_DISABLED")
+assertEqual(actionOwner.mover.actionPressed, nil, "combat hides clear an action press")
+inCombat = false
+AF.ShowMovers()
+actionOwner.mover:RunScript("OnMouseUp", "LeftButton", true)
+assertEqual(actionCalls, 1, "reopening does not retain an old action press")
+
+AF.SetMoverAction(actionOwner, nil)
+actionOwner:SetPoint("CENTER", AF.UIParent, "CENTER", 3, 4)
+actionOwner._points = {
+    CENTER = {"CENTER", AF.UIParent, "CENTER", 3, 4},
+}
+AF.ShowMovers()
+assertTrue(actionOwner.mover:IsShown(), "clearing action restores normal mover visibility")
+assertEqual(actionOwner.mover._original[1], "CENTER", "normal mover captures after action removal")
+assertEqual(actionOwner.mover.text:GetText(), "Action", "normal mover label is restored")
+
+AF.HideMovers()
+actionOwner.enabled = false
+AF.ShowMovers()
 validOwner.failGetPoint = nil
 
 local baselineClear = validOwner.clearCalls

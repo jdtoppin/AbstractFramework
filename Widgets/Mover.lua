@@ -304,6 +304,7 @@ local function HideMoversImmediately()
         for _, mover in pairs(group) do
             mover:SetScript("OnUpdate", nil)
             mover.isDragging = nil
+            mover.actionPressed = nil
             mover.moved = nil
             mover._movementOriginal = nil
             mover._original = nil
@@ -914,6 +915,7 @@ function AF.CreateMover(owner, group, text, save)
     mover:Hide()
 
     mover.text = AF.CreateFontString(mover, text, mover.accentColor, "AF_FONT_OUTLINE", "OVERLAY")
+    mover.defaultText = text
     mover.text:SetPoint("CENTER")
     mover.text:SetText(text)
 
@@ -921,6 +923,11 @@ function AF.CreateMover(owner, group, text, save)
         if button ~= "LeftButton" then return end
         if InCombatLockdown() then
             HideMoversImmediately()
+            return
+        end
+
+        if mover.action then
+            mover.actionPressed = true
             return
         end
 
@@ -985,9 +992,20 @@ function AF.CreateMover(owner, group, text, save)
         end)
     end)
 
-    mover:SetScript("OnMouseUp", function(self, button)
+    mover:SetScript("OnMouseUp", function(self, button, upInside)
         if InCombatLockdown() then
             HideMoversImmediately()
+            return
+        end
+
+        if mover.action then
+            local actionPressed = mover.actionPressed
+            mover.actionPressed = nil
+            if button == "LeftButton" and upInside and actionPressed then
+                local action = mover.action
+                AF.HideMovers()
+                action(owner)
+            end
             return
         end
 
@@ -1017,6 +1035,7 @@ function AF.CreateMover(owner, group, text, save)
             HideMoversImmediately()
             return
         end
+        if mover.action then return end
         if mover.isDragging then return end
         if not IsOrdinaryNumber(delta) then return end
 
@@ -1076,7 +1095,9 @@ function AF.CreateMover(owner, group, text, save)
             end
         end
 
-        AnchorPositionEditorFrame(owner)
+        if not mover.action then
+            AnchorPositionEditorFrame(owner)
+        end
     end)
 
     mover:SetScript("onLeave", function()
@@ -1099,6 +1120,38 @@ function AF.UpdateMoverSave(owner, save)
     owner.mover.save = save
 end
 
+---Turn a mover into a click-only action. Passing nil restores normal mover behavior.
+---@param owner Frame
+---@param action? fun(owner: Frame)
+---@param actionText? string
+function AF.SetMoverAction(owner, action, actionText)
+    assert(owner and owner.mover, "owner must have a mover")
+    assert(action == nil or type(action) == "function", "action must be a function or nil")
+    assert(actionText == nil or type(actionText) == "string", "action text must be a string or nil")
+
+    local mover = owner.mover
+    mover.action = action
+    mover.actionPressed = nil
+    mover.isDragging = nil
+    mover.moved = nil
+    mover._movementOriginal = nil
+    mover._original = nil
+    mover:SetScript("OnUpdate", nil)
+
+    if positionEditorFrame and positionEditorFrame.owner == owner then
+        positionEditorFrame.owner = nil
+        positionEditorFrame:Hide()
+    end
+    modified[owner] = nil
+    if moverDialog and moverDialog.undo then
+        moverDialog.undo:SetEnabled(next(modified) ~= nil)
+    end
+
+    if mover.text then
+        mover.text:SetText(action and (actionText or mover.defaultText) or mover.defaultText)
+    end
+end
+
 ---------------------------------------------------------------------
 -- toggle movers
 ---------------------------------------------------------------------
@@ -1119,7 +1172,7 @@ function AF.ShowMovers(group)
         for _, m in pairs(gt) do
             if show
                 and (type(m.owner.enabled) ~= "boolean" or m.owner.enabled)
-                and CaptureOriginal(m)
+                and (m.action or CaptureOriginal(m))
             then
                 m:Show()
             else
@@ -1156,7 +1209,7 @@ function AF.UndoMovers()
 
     for _, g in pairs(movers) do
         for _, m in pairs(g) do
-            if m._original then
+            if not m.action and m._original then
                 UpdateAndSave(
                     m.owner,
                     m._original[1],
