@@ -925,6 +925,8 @@ assertEqual(legacyFramework.HasNativeDispelColorTexture(), false,
     "legacy native dispel color capability")
 assertEqual(legacyFramework.HasCustomAuraIconDurationBar(), false,
     "legacy icon duration-bar capability")
+assertEqual(legacyFramework.HasCustomAuraDurationBar(), false,
+    "legacy standalone duration-bar capability")
 assertEqual(legacyFramework.HasCustomAuraOverlaySlot(), false,
     "legacy aura overlay capability")
 assertSnapshotEqual(
@@ -963,6 +965,8 @@ assertEqual(AF.HasNativeDispelColorTexture(), true,
     "current native dispel color capability")
 assertEqual(AF.HasCustomAuraIconDurationBar(), true,
     "current icon duration-bar capability")
+assertEqual(AF.HasCustomAuraDurationBar(), true,
+    "current standalone duration-bar capability")
 assertEqual(AF.HasCustomAuraOverlaySlot(), true,
     "current aura overlay capability")
 assertSnapshotEqual(
@@ -1986,6 +1990,105 @@ assert(tostring(underbarInsetError):find(
     1,
     true
 ), "underbar iconInset conflict error")
+
+local barAF, barState, barAPI = loadAuraModule(true, false)
+local barContainer = barAF.CreateCustomAuraContainer(
+    {},
+    "AFStandaloneDurationBarContainer",
+    "player"
+)
+local barStyle = {
+    noBorder = true,
+    width = 18,
+    height = 4,
+    cooldownStyle = "duration_bar",
+    durationBar = {
+        inset = 0,
+        color = {0.1, 0.7, 0.9, 0.8},
+        backgroundColor = {0.02, 0.03, 0.04, 0.6},
+    },
+}
+barAF.AddCustomAuraGroup(
+    barContainer,
+    "standaloneBarHelpful",
+    "HELPFUL",
+    {maxFrameCount = 1},
+    barStyle
+)
+local barButton = barContainer.buttons[1]
+assertEqual(barButton.size[1], 18,
+    "standalone duration bar button width")
+assertEqual(barButton.size[2], 4,
+    "standalone duration bar button height")
+assertEqual(barButton.bindings.SetDurationCooldown, nil,
+    "standalone duration bar inactive cooldown binding")
+local barArguments = barButton.bindings.SetDurationBar
+assertEqual(barArguments.n, 2,
+    "standalone duration-bar binding argument count")
+local standaloneBar = barArguments[1]
+assertEqual(standaloneBar.frameType, "StatusBar",
+    "standalone duration-bar frame type")
+assertEqual(standaloneBar.allPoints[1], barButton,
+    "standalone duration bar fills configured button")
+assertEqual(standaloneBar.orientation, "HORIZONTAL",
+    "standalone duration-bar orientation")
+assertEqual(standaloneBar.reverseFill, false,
+    "standalone duration-bar reverse fill")
+assertEqual(barArguments[2].direction,
+    barAPI.Enum.StatusBarTimerDirection.RemainingTime,
+    "standalone duration-bar timer direction")
+assertCall(findCall(standaloneBar.calls, "SetStatusBarColor"),
+    "SetStatusBarColor", 0.1, 0.7, 0.9, 0.8)
+local standaloneBarIcon = barButton.bindings.SetIcon[1]
+assertEqual(standaloneBarIcon.shown, false,
+    "standalone duration-bar icon hidden")
+assertEqual(barButton.regions[2].shown, false,
+    "standalone duration-bar block background hidden")
+local standaloneBarBackground = barButton.regions[3]
+assertCall(findCall(standaloneBarBackground.calls, "SetColorTexture"),
+    "SetColorTexture", 0.02, 0.03, 0.04, 0.6)
+assertEqual(barState.forbiddenAuraEnumerationCalls, 0,
+    "standalone duration-bar forbidden aura reads")
+assertEqual(barStyle.durationBar.inset, 0,
+    "caller standalone duration-bar style mutated")
+
+local invalidBarStyle = copy(barStyle)
+invalidBarStyle.durationBar.height = 3
+local acceptedBarHeight, barHeightError = pcall(function()
+    barAF.AddCustomAuraGroup(
+        barContainer,
+        "standaloneBarInvalidHeight",
+        "HELPFUL",
+        {maxFrameCount = 1},
+        invalidBarStyle
+    )
+end)
+assertEqual(acceptedBarHeight, false,
+    "standalone duration bar accepted underbar height")
+assert(tostring(barHeightError):find(
+    "unsupported standalone durationBar field: height",
+    1,
+    true
+), "standalone duration-bar unsupported height error")
+
+local invalidBarInsetStyle = copy(barStyle)
+invalidBarInsetStyle.durationBar.inset = 2
+local acceptedBarInset, barInsetError = pcall(function()
+    barAF.AddCustomAuraGroup(
+        barContainer,
+        "standaloneBarInvalidInset",
+        "HELPFUL",
+        {maxFrameCount = 1},
+        invalidBarInsetStyle
+    )
+end)
+assertEqual(acceptedBarInset, false,
+    "standalone duration bar accepted impossible inset")
+assert(tostring(barInsetError):find(
+    "duration_bar inset leaves no content",
+    1,
+    true
+), "standalone duration-bar invalid inset error")
 
 local combatAF, combatState = loadAuraModule(true, false)
 combatState.inCombat = true

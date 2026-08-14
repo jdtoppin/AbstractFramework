@@ -133,6 +133,40 @@ local function CreateAuraDurationUnderbar(parent, icon, style)
     return durationBar
 end
 
+local function CreateAuraStandaloneDurationBar(parent, style)
+    local durationBar = CreateFrame("StatusBar", nil, parent)
+    AF.SetFrameLevel(durationBar, 1, parent)
+    if style.inset == 0 then
+        durationBar:SetAllPoints(parent)
+    else
+        durationBar:SetPoint(
+            "TOPLEFT",
+            parent,
+            "TOPLEFT",
+            style.inset,
+            -style.inset
+        )
+        durationBar:SetPoint(
+            "BOTTOMRIGHT",
+            parent,
+            "BOTTOMRIGHT",
+            -style.inset,
+            style.inset
+        )
+    end
+    durationBar:SetOrientation("HORIZONTAL")
+    durationBar:SetReverseFill(false)
+    durationBar:SetStatusBarTexture(AF.GetPlainTexture())
+    durationBar:SetStatusBarColor(unpack(style.color))
+
+    local background = durationBar:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints(durationBar)
+    background:SetColorTexture(unpack(style.backgroundColor))
+    durationBar:Hide()
+
+    return durationBar
+end
+
 local function CopyAuraBlockColor(color)
     if type(color) == "table"
         and type(color[1]) == "number"
@@ -163,6 +197,7 @@ local function UsesAuraDurationBar(style)
     return style == "vertical"
         or style == "block_vertical"
         or style == "icon_duration_bar"
+        or style == "duration_bar"
 end
 
 local function UsesAuraDurationCooldown(style)
@@ -179,6 +214,7 @@ local function SetupAuraCooldownStyle(
 )
     local isVertical = style == "vertical" or style == "block_vertical"
     local isUnderbar = style == "icon_duration_bar"
+    local isStandaloneBar = style == "duration_bar"
     local isBlockVertical = style == "block_vertical"
     local isBlockClock = style:find("^block_clock") ~= nil
     local isBlock = isBlockVertical or isBlockClock
@@ -187,14 +223,14 @@ local function SetupAuraCooldownStyle(
         cooldown:SetDrawEdge(style:find("edge$") ~= nil)
     end
     if durationBar then
-        durationBar:SetShown(isVertical or isUnderbar)
-        if not isUnderbar then
+        durationBar:SetShown(isVertical or isUnderbar or isStandaloneBar)
+        if not isUnderbar and not isStandaloneBar then
             durationBar:SetStatusBarColor(0, 0, 0, 0.75)
         end
     end
     blockBackground:SetColorTexture(unpack(blockColor))
     blockBackground:SetShown(isBlock)
-    icon:SetShown(style:find("^block") == nil)
+    icon:SetShown(not isStandaloneBar and style:find("^block") == nil)
 end
 
 local function SetupAuraDurationText(durationText, config)
@@ -710,6 +746,44 @@ local function CopyCustomAuraDurationUnderbarStyle(source, buttonStyle)
     return style
 end
 
+local function CopyCustomAuraStandaloneDurationBarStyle(source, buttonStyle)
+    assert(source == nil or type(source) == "table",
+        "durationBar must be a table")
+
+    source = source or {}
+    local supportedKeys = {
+        backgroundColor = true,
+        color = true,
+        inset = true,
+    }
+    for key in pairs(source) do
+        assert(supportedKeys[key],
+            "unsupported standalone durationBar field: " .. tostring(key))
+    end
+
+    local style = AF.Copy(source)
+    style.inset = style.inset or 0
+    style.color = style.color or {1, 1, 1, 1}
+    style.backgroundColor = style.backgroundColor or {0, 0, 0, 0.75}
+
+    assert(IsFiniteNumber(style.inset) and style.inset >= 0,
+        "durationBar.inset must be a non-negative finite number")
+    assert(IsNormalizedColor(style.color),
+        "durationBar.color must be a normalized RGB or RGBA table")
+    assert(IsNormalizedColor(style.backgroundColor),
+        "durationBar.backgroundColor must be a normalized RGB or RGBA table")
+    assert(IsFiniteNumber(buttonStyle.width) and buttonStyle.width > 0
+            and IsFiniteNumber(buttonStyle.height) and buttonStyle.height > 0,
+        "duration_bar requires positive buttonStyle.width and buttonStyle.height")
+    assert(buttonStyle.iconInset == nil,
+        "duration_bar cannot be combined with buttonStyle.iconInset")
+    assert(buttonStyle.width > style.inset * 2
+            and buttonStyle.height > style.inset * 2,
+        "duration_bar inset leaves no content")
+
+    return style
+end
+
 -- Retail 12.1.0.69273 DurationTextBindingSharedDocumentation exposes one
 -- sampled property for each native text-color curve. A valid descriptor colors
 -- values below the threshold and returns to the configured normal color at the
@@ -821,6 +895,11 @@ local function InitializeCustomAuraButton(button, style, anchor)
                 icon,
                 style.durationBar
             )
+        elseif cooldownStyle == "duration_bar" then
+            durationBar = CreateAuraStandaloneDurationBar(
+                button,
+                style.durationBar
+            )
         else
             durationBar = CreateAuraDurationBar(button, icon)
         end
@@ -881,7 +960,9 @@ local function InitializeCustomAuraButton(button, style, anchor)
     -- only the carrier selected by the construction-owned cooldown style.
     if durationBar then
         local direction = STATUS_BAR_ELAPSED_TIME
-        if cooldownStyle == "icon_duration_bar" then
+        if cooldownStyle == "icon_duration_bar"
+            or cooldownStyle == "duration_bar"
+        then
             assert(STATUS_BAR_REMAINING_TIME ~= nil,
                 "RemainingTime status-bar timers are unavailable")
             direction = STATUS_BAR_REMAINING_TIME
@@ -975,6 +1056,11 @@ local function GetCustomAuraButtonOptions(buttonOptions, buttonStyle, anchor, st
     end
     if style.cooldownStyle == "icon_duration_bar" then
         style.durationBar = CopyCustomAuraDurationUnderbarStyle(
+            style.durationBar,
+            style
+        )
+    elseif style.cooldownStyle == "duration_bar" then
+        style.durationBar = CopyCustomAuraStandaloneDurationBarStyle(
             style.durationBar,
             style
         )
@@ -1403,6 +1489,12 @@ end
 
 ---@return boolean
 function AF.HasCustomAuraIconDurationBar()
+    return AF.hasCustomAuraContainer
+        and STATUS_BAR_REMAINING_TIME ~= nil
+end
+
+---@return boolean
+function AF.HasCustomAuraDurationBar()
     return AF.hasCustomAuraContainer
         and STATUS_BAR_REMAINING_TIME ~= nil
 end

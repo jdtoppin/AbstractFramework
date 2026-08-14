@@ -1,6 +1,7 @@
 r43:
 
 - Add a native icon-with-duration-underbar presentation whose timer remains inside Blizzard's managed AuraButton path.
+- Add a native standalone duration-bar presentation for compact aura displays without a spell icon.
 - Add a scriptless native AuraSlot overlay primitive for aura-driven frame highlights without inspecting managed aura state.
 
 r42:
