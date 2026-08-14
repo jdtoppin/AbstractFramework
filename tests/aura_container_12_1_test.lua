@@ -118,6 +118,10 @@ local function makeRegion(button)
         style("SetPoint", ...)
     end
 
+    function region:ClearAllPoints()
+        style("ClearAllPoints")
+    end
+
     function region:SetColorTexture(...)
         self.colorTexture = pack(...)
         style("SetColorTexture", ...)
@@ -149,6 +153,11 @@ local function makeRegion(button)
     function region:SetBlendMode(...)
         self.blendMode = pack(...)
         style("SetBlendMode", ...)
+    end
+
+    function region:SetVertexColor(...)
+        self.vertexColor = pack(...)
+        style("SetVertexColor", ...)
     end
 
     function region:SetShown(shown)
@@ -749,7 +758,7 @@ local function loadAuraModule(currentSchema, forbidCreateFrame, mutateEnvironmen
         SecondsFormatterInterval = {Seconds = 1, Days = 4},
         SecondsFormatterIntervalWhitespace = {Strip = 1},
         StatusBarInterpolation = {Immediate = 0},
-        StatusBarTimerDirection = {ElapsedTime = 0},
+        StatusBarTimerDirection = {ElapsedTime = 0, RemainingTime = 1},
         CustomAuraButtonDispelTypeTextureStyle = {PreserveAsset = 3},
         UnitAuraSortRule = {Default = 0},
         UnitAuraSortDirection = {Normal = 0, Reverse = 1},
@@ -914,6 +923,12 @@ assertDurationFormatter(legacyState, legacyApi, "legacy schema")
 assertEqual(legacyFramework.HasCustomAuraContainer(), false, "legacy schema capability")
 assertEqual(legacyFramework.HasNativeDispelColorTexture(), false,
     "legacy native dispel color capability")
+assertEqual(legacyFramework.HasCustomAuraIconDurationBar(), false,
+    "legacy icon duration-bar capability")
+assertEqual(legacyFramework.HasCustomAuraDurationBar(), false,
+    "legacy standalone duration-bar capability")
+assertEqual(legacyFramework.HasCustomAuraOverlaySlot(), false,
+    "legacy aura overlay capability")
 assertSnapshotEqual(
     legacyFramework.GetCustomAuraContainerConstructionTotals(),
     expectedConstructionTotals(),
@@ -948,6 +963,12 @@ local durationFormatter = assertDurationFormatter(state, api, "current schema")
 assertEqual(AF.HasCustomAuraContainer(), true, "current schema capability")
 assertEqual(AF.HasNativeDispelColorTexture(), true,
     "current native dispel color capability")
+assertEqual(AF.HasCustomAuraIconDurationBar(), true,
+    "current icon duration-bar capability")
+assertEqual(AF.HasCustomAuraDurationBar(), true,
+    "current standalone duration-bar capability")
+assertEqual(AF.HasCustomAuraOverlaySlot(), true,
+    "current aura overlay capability")
 assertSnapshotEqual(
     AF.GetCustomAuraContainerConstructionTotals(),
     expectedConstructionTotals(),
@@ -1876,6 +1897,199 @@ assertEqual(verticalButton.regions[2].shown, false,
 assertEqual(verticalState.aurasSecret, false,
     "vertical fixture aura secrecy")
 
+local underbarAF, underbarState, underbarAPI = loadAuraModule(true, false)
+local underbarContainer = underbarAF.CreateCustomAuraContainer(
+    {},
+    "AFUnderbarAuraContainer",
+    "player"
+)
+local underbarStyle = {
+    noBorder = true,
+    width = 18,
+    height = 22,
+    cooldownStyle = "icon_duration_bar",
+    durationBar = {
+        height = 3,
+        gap = 1,
+        inset = 1,
+        color = {0.2, 0.8, 1, 1},
+        backgroundColor = {0.05, 0.05, 0.05, 0.9},
+    },
+    stackText = {
+        enabled = true,
+        font = {"font", 10, ""},
+        position = {"BOTTOMRIGHT"},
+        color = {1, 1, 1, 1},
+    },
+}
+underbarAF.AddCustomAuraGroup(
+    underbarContainer,
+    "underbarHelpful",
+    "HELPFUL",
+    {maxFrameCount = 1},
+    underbarStyle
+)
+local underbarButton = underbarContainer.buttons[1]
+assertEqual(underbarButton.bindings.SetDurationCooldown, nil,
+    "underbar inactive cooldown binding")
+local underbarArguments = underbarButton.bindings.SetDurationBar
+assertEqual(underbarArguments.n, 2,
+    "underbar duration-bar binding argument count")
+local underbar = underbarArguments[1]
+assertEqual(underbarButton.frames[1], underbar,
+    "underbar graphical duration frame identity")
+assertEqual(underbar.frameType, "StatusBar",
+    "underbar graphical duration frame type")
+assertEqual(underbar.orientation, "HORIZONTAL",
+    "underbar orientation")
+assertEqual(underbar.reverseFill, false,
+    "underbar reverse fill")
+assertEqual(underbarArguments[2].direction,
+    underbarAPI.Enum.StatusBarTimerDirection.RemainingTime,
+    "underbar timer direction")
+assertCall(findCall(underbar.calls, "SetStatusBarColor"),
+    "SetStatusBarColor", 0.2, 0.8, 1, 1)
+assertEqual(#underbarButton.regions, 4,
+    "underbar button region count")
+local underbarIcon = underbarButton.bindings.SetIcon[1]
+assert(findCall(underbarIcon.calls, "ClearAllPoints"),
+    "underbar icon retained full-button geometry")
+local underbarOverlayFrame = underbarButton.frames[2]
+assertEqual(underbarOverlayFrame.allPoints[1], underbarIcon,
+    "underbar text overlay follows icon bounds")
+assertEqual(underbarButton.bindings.SetApplicationCount[1],
+    underbarButton.regions[4],
+    "underbar stack text binding")
+local underbarBackground = underbarButton.regions[3]
+assertCall(findCall(underbarBackground.calls, "SetColorTexture"),
+    "SetColorTexture", 0.05, 0.05, 0.05, 0.9)
+assertEqual(underbarIcon.shown, true,
+    "underbar icon visibility")
+assertEqual(underbarButton.regions[2].shown, false,
+    "underbar block background visibility")
+assertEqual(underbarState.forbiddenAuraEnumerationCalls, 0,
+    "underbar forbidden aura reads")
+assertEqual(underbarStyle.durationBar.height, 3,
+    "caller underbar style mutated")
+
+local conflictingUnderbarStyle = copy(underbarStyle)
+conflictingUnderbarStyle.iconInset = 1
+local acceptedUnderbarInset, underbarInsetError = pcall(function()
+    underbarAF.AddCustomAuraGroup(
+        underbarContainer,
+        "underbarInsetConflict",
+        "HELPFUL",
+        {maxFrameCount = 1},
+        conflictingUnderbarStyle
+    )
+end)
+assertEqual(acceptedUnderbarInset, false,
+    "underbar iconInset conflict")
+assert(tostring(underbarInsetError):find(
+    "cannot be combined with buttonStyle.iconInset",
+    1,
+    true
+), "underbar iconInset conflict error")
+
+local barAF, barState, barAPI = loadAuraModule(true, false)
+local barContainer = barAF.CreateCustomAuraContainer(
+    {},
+    "AFStandaloneDurationBarContainer",
+    "player"
+)
+local barStyle = {
+    noBorder = true,
+    width = 18,
+    height = 4,
+    cooldownStyle = "duration_bar",
+    durationBar = {
+        inset = 0,
+        color = {0.1, 0.7, 0.9, 0.8},
+        backgroundColor = {0.02, 0.03, 0.04, 0.6},
+    },
+}
+barAF.AddCustomAuraGroup(
+    barContainer,
+    "standaloneBarHelpful",
+    "HELPFUL",
+    {maxFrameCount = 1},
+    barStyle
+)
+local barButton = barContainer.buttons[1]
+assertEqual(barButton.size[1], 18,
+    "standalone duration bar button width")
+assertEqual(barButton.size[2], 4,
+    "standalone duration bar button height")
+assertEqual(barButton.bindings.SetDurationCooldown, nil,
+    "standalone duration bar inactive cooldown binding")
+local barArguments = barButton.bindings.SetDurationBar
+assertEqual(barArguments.n, 2,
+    "standalone duration-bar binding argument count")
+local standaloneBar = barArguments[1]
+assertEqual(standaloneBar.frameType, "StatusBar",
+    "standalone duration-bar frame type")
+assertEqual(standaloneBar.allPoints[1], barButton,
+    "standalone duration bar fills configured button")
+assertEqual(standaloneBar.orientation, "HORIZONTAL",
+    "standalone duration-bar orientation")
+assertEqual(standaloneBar.reverseFill, false,
+    "standalone duration-bar reverse fill")
+assertEqual(barArguments[2].direction,
+    barAPI.Enum.StatusBarTimerDirection.RemainingTime,
+    "standalone duration-bar timer direction")
+assertCall(findCall(standaloneBar.calls, "SetStatusBarColor"),
+    "SetStatusBarColor", 0.1, 0.7, 0.9, 0.8)
+local standaloneBarIcon = barButton.bindings.SetIcon[1]
+assertEqual(standaloneBarIcon.shown, false,
+    "standalone duration-bar icon hidden")
+assertEqual(barButton.regions[2].shown, false,
+    "standalone duration-bar block background hidden")
+local standaloneBarBackground = barButton.regions[3]
+assertCall(findCall(standaloneBarBackground.calls, "SetColorTexture"),
+    "SetColorTexture", 0.02, 0.03, 0.04, 0.6)
+assertEqual(barState.forbiddenAuraEnumerationCalls, 0,
+    "standalone duration-bar forbidden aura reads")
+assertEqual(barStyle.durationBar.inset, 0,
+    "caller standalone duration-bar style mutated")
+
+local invalidBarStyle = copy(barStyle)
+invalidBarStyle.durationBar.height = 3
+local acceptedBarHeight, barHeightError = pcall(function()
+    barAF.AddCustomAuraGroup(
+        barContainer,
+        "standaloneBarInvalidHeight",
+        "HELPFUL",
+        {maxFrameCount = 1},
+        invalidBarStyle
+    )
+end)
+assertEqual(acceptedBarHeight, false,
+    "standalone duration bar accepted underbar height")
+assert(tostring(barHeightError):find(
+    "unsupported standalone durationBar field: height",
+    1,
+    true
+), "standalone duration-bar unsupported height error")
+
+local invalidBarInsetStyle = copy(barStyle)
+invalidBarInsetStyle.durationBar.inset = 2
+local acceptedBarInset, barInsetError = pcall(function()
+    barAF.AddCustomAuraGroup(
+        barContainer,
+        "standaloneBarInvalidInset",
+        "HELPFUL",
+        {maxFrameCount = 1},
+        invalidBarInsetStyle
+    )
+end)
+assertEqual(acceptedBarInset, false,
+    "standalone duration bar accepted impossible inset")
+assert(tostring(barInsetError):find(
+    "duration_bar inset leaves no content",
+    1,
+    true
+), "standalone duration-bar invalid inset error")
+
 local combatAF, combatState = loadAuraModule(true, false)
 combatState.inCombat = true
 combatState.aurasSecret = true
@@ -2349,6 +2563,85 @@ assertSnapshotEqual(
         initialFrameReservationsCompleted = 2,
     }),
     "second dispel overlay construction totals"
+)
+
+local auraOverlayAF, auraOverlayState = loadAuraModule(true, false)
+local auraOverlayContainer = auraOverlayAF.CreateCustomAuraContainer(
+    {},
+    "AFAuraOverlayContainer",
+    "raid1"
+)
+local auraOverlayBounds = {frameLevel = 20}
+function auraOverlayBounds:GetFrameLevel()
+    return self.frameLevel
+end
+auraOverlayState.aurasSecret = true
+local auraOverlayButton = auraOverlayAF.AddCustomAuraOverlaySlot(
+    auraOverlayContainer,
+    "defensiveHighlight",
+    "HELPFUL",
+    {
+        candidateFilters = {includeSpellIDs = {[12345] = true}},
+        anchor = {
+            matchAnchorBounds = true,
+            relativeTo = auraOverlayBounds,
+        },
+    },
+    {
+        texture = "Interface\\AddOns\\AbstractFramework\\Media\\Textures\\Border",
+        vertexColor = {0.1, 0.7, 1, 0.4},
+        blendMode = "ADD",
+        frameLevelOffset = 1,
+    }
+)
+assertCall({
+    name = "SetAllPoints",
+    args = auraOverlayButton.allPoints,
+}, "SetAllPoints", auraOverlayBounds)
+assertCall({
+    name = "SetFrameLevel",
+    args = auraOverlayButton.frameLevel,
+}, "SetFrameLevel", 21)
+assertEqual(#auraOverlayButton.regions, 1,
+    "generic aura overlay child region count")
+assertEqual(#auraOverlayButton.frames, 0,
+    "generic aura overlay child frame count")
+assertEqual(next(auraOverlayButton.scripts), nil,
+    "generic aura overlay script installation")
+assertEqual(auraOverlayButton.bindings.SetIcon, nil,
+    "generic aura overlay icon binding")
+assertEqual(auraOverlayButton.bindings.AddDispelTypeTexture, nil,
+    "generic aura overlay dispel binding")
+assertEqual(auraOverlayButton.shown, false,
+    "generic aura overlay parent starts hidden")
+assertCall({
+    name = "EnableMouse",
+    args = auraOverlayButton.bindings.EnableMouse,
+}, "EnableMouse", false)
+local auraOverlayTexture = auraOverlayButton.regions[1]
+assertCall(findCall(auraOverlayTexture.calls, "SetTexture"),
+    "SetTexture", "Interface\\AddOns\\AbstractFramework\\Media\\Textures\\Border")
+assertCall(findCall(auraOverlayTexture.calls, "SetVertexColor"),
+    "SetVertexColor", 0.1, 0.7, 1, 0.4)
+assertCall(findCall(auraOverlayTexture.calls, "SetBlendMode"),
+    "SetBlendMode", "ADD")
+assertEqual(findCall(auraOverlayTexture.calls, "Hide"), nil,
+    "generic aura overlay must use native parent visibility")
+assertEqual(auraOverlayState.forbiddenAuraEnumerationCalls, 0,
+    "generic aura overlay forbidden aura reads")
+assertSnapshotEqual(
+    auraOverlayAF.GetCustomAuraContainerConstructionTotals(),
+    expectedConstructionTotals({
+        containerCreateAttempts = 1,
+        containerAllocations = 1,
+        containerCreateCompletions = 1,
+        trackedContainers = 1,
+        slotAddAttempts = 1,
+        slotsAdded = 1,
+        initialFrameReservationsAttempted = 1,
+        initialFrameReservationsCompleted = 1,
+    }),
+    "generic aura overlay construction totals"
 )
 
 print("aura_container_12_1_test: OK")
