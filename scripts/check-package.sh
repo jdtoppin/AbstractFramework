@@ -46,6 +46,8 @@ required = {
     "AbstractFramework/AbstractFramework.toc",
     "AbstractFramework/LICENSE",
     "AbstractFramework/README.md",
+    "AbstractFramework/Media/Fonts/NotoSansCJKsc_AP_Latin.ttf",
+    "AbstractFramework/Media/Fonts/NotoSansCJKsc_AP_Latin-OFL.txt",
 }
 dev_only = {
     ".gitattributes",

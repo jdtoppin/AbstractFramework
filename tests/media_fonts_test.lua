@@ -7,7 +7,7 @@ end
 local corePrefix = "Interface\\AddOns\\AbstractFramework\\Media\\Fonts\\"
 local packPrefix = "Interface\\AddOns\\AbstractFramework_Media\\Media\\Fonts\\"
 local optionalFonts = {
-    {name = "Noto_AP", file = "NotoSansCJKsc_AP.ttf"},
+    {name = "Noto_AP", file = "NotoSansCJKsc_AP.ttf", latinFile = "NotoSansCJKsc_AP_Latin.ttf"},
     {name = "Noto_Dolphin", file = "NotoSansCJKsc_Dolphin.ttf"},
     {name = "Unifont", file = "Unifont.otf"},
 }
@@ -39,7 +39,7 @@ local function createFontObject(name)
     return font
 end
 
-local function loadCore(clientFont)
+local function loadCore(clientFont, isEnglish)
     local media = {font = {}, statusbar = {}}
     local LSM = {}
 
@@ -70,6 +70,7 @@ local function loadCore(clientFont)
         return media[kind]
     end
 
+    LOCALE_enUS = isEnglish
     GameFontNormal = {
         GetFont = function() return clientFont, 13, "" end,
     }
@@ -107,7 +108,7 @@ local function loadCore(clientFont)
     return AF, LSM
 end
 
-local function assertSavedSelections(AF, expectedPrefix, clientFont)
+local function assertSavedSelections(AF, expectedPrefix, clientFont, isEnglish)
     local renderedFont
     local fs = {
         SetFont = function(_, font) renderedFont = font end,
@@ -117,7 +118,9 @@ local function assertSavedSelections(AF, expectedPrefix, clientFont)
     local parent = {CreateFontString = function() return createFontObject() end}
 
     for _, font in ipairs(optionalFonts) do
-        local expected = expectedPrefix and expectedPrefix .. font.file or clientFont
+        local expected = expectedPrefix and expectedPrefix .. font.file
+            or isEnglish and font.latinFile and corePrefix .. font.latinFile
+            or clientFont
         local savedSelections = {
             font.name,
             corePrefix .. font.file,
@@ -176,19 +179,28 @@ end
 
 -- These are test fixtures for differing client-localized UI fonts, not a
 -- claim that every game installation exposes the same font filenames.
-for _, clientFont in ipairs({"Fonts\\FRIZQT__.TTF", "Fonts\\ARKai_T.ttf", "Fonts\\2002.TTF"}) do
-    local AF, LSM = loadCore(clientFont)
+for _, client in ipairs({
+    {font = "Fonts\\FRIZQT__.TTF", isEnglish = true},
+    {font = "Fonts\\ARKai_T.ttf", isEnglish = false},
+    {font = "Fonts\\2002.TTF", isEnglish = false},
+    {font = "Fonts\\FRIZQT___CYR.TTF", isEnglish = false},
+}) do
+    local clientFont, isEnglish = client.font, client.isEnglish
+    local AF, LSM = loadCore(clientFont, isEnglish)
     for _, font in ipairs(optionalFonts) do
         assertEqual(LSM:IsValid("font", font.name), false, "core omits optional font registrations")
     end
     assertEqual(LSM:IsValid("font", "Dolphin"), true, "small Latin Dolphin remains")
     assertEqual(LSM:IsValid("font", "Accidental Presidency"), true, "small Latin AP remains")
-    assertEqual(#AF.LSM_GetFontDropdownItems(), 6, "core dropdown contains only installed fonts")
-    assertSavedSelections(AF, nil, clientFont)
+    assertEqual(AF.LSM_GetFont("Noto_AP_Latin"), corePrefix .. "NotoSansCJKsc_AP_Latin.ttf", "slim Noto_AP is registered in core")
+    local latinFile = assert(io.open("Media/Fonts/NotoSansCJKsc_AP_Latin.ttf", "rb"))
+    latinFile:close()
+    assertEqual(#AF.LSM_GetFontDropdownItems(), 7, "core dropdown contains only installed fonts")
+    assertSavedSelections(AF, nil, clientFont, isEnglish)
 
     assert(loadfile("OptionalMedia/AbstractFramework_Media/Register.lua"))("AbstractFramework_Media", {})
-    assertEqual(#AF.LSM_GetFontDropdownItems(), 9, "installed pack exposes all three optional fonts")
-    assertSavedSelections(AF, packPrefix, clientFont)
+    assertEqual(#AF.LSM_GetFontDropdownItems(), 10, "installed pack exposes all three optional fonts")
+    assertSavedSelections(AF, packPrefix, clientFont, isEnglish)
 
     for _, font in ipairs(optionalFonts) do
         assertEqual(LSM:Fetch("font", font.name), packPrefix .. font.file, "pack uses its own media path")
@@ -199,11 +211,11 @@ for _, clientFont in ipairs({"Fonts\\FRIZQT__.TTF", "Fonts\\ARKai_T.ttf", "Fonts
 
     -- A UI reload with the pack disabled creates a fresh registry. Reinstalling
     -- on the next load resolves the same saved selections to the pack again.
-    AF = loadCore(clientFont)
-    assertSavedSelections(AF, nil, clientFont)
-    AF = loadCore(clientFont)
+    AF = loadCore(clientFont, isEnglish)
+    assertSavedSelections(AF, nil, clientFont, isEnglish)
+    AF = loadCore(clientFont, isEnglish)
     assert(loadfile("OptionalMedia/AbstractFramework_Media/Register.lua"))("AbstractFramework_Media", {})
-    assertSavedSelections(AF, packPrefix, clientFont)
+    assertSavedSelections(AF, packPrefix, clientFont, isEnglish)
 end
 
 print("optional media font tests passed")

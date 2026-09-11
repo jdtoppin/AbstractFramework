@@ -14,8 +14,10 @@ Install the `AbstractFramework_Media` folder alongside `AbstractFramework` and
 required. BFInfinite declares this pack as an optional dependency so its fonts
 are registered before BFInfinite applies saved settings.
 
-Without the pack, AbstractFramework resolves saved `Noto_AP`, `Noto_Dolphin`,
-and `Unifont` selections to the original client UI font. It also recognizes the
+Core includes `Noto_AP_Latin`, a slim subset preserving the full Noto_AP font's
+English/Latin glyph shapes, spacing, and vertical metrics without CJK glyphs.
+Without the pack, saved `Noto_AP` selections use this subset on English
+clients. Other missing selections use the original client UI font. AF recognizes the
 old AbstractFramework file paths and new media-pack file paths. Saved choices
 are preserved and resolve to the chosen font again after reinstalling or
 reenabling the pack and reloading. Other addons that store raw font paths or

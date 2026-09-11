@@ -1,7 +1,7 @@
 # Optional font package
 
 AbstractFramework core and `AbstractFramework_Media` are separate installable
-addons. Core retains its small fonts and all locale text. The optional pack
+addons. Core includes `Noto_AP_Latin`, its other small fonts, and all locale text. The optional pack
 provides the existing `Noto_AP`, `Noto_Dolphin`, and `Unifont` font choices,
 including their bundled license notices. Both Noto files contain CJK glyphs;
 the small `Dolphin.ttf` font remains in core.
@@ -10,6 +10,27 @@ Install `AbstractFramework_Media/` beside `AbstractFramework/` in the game's
 `Interface/AddOns/` directory. The media addon is optional for every client
 language. CJK clients can use the game's own font when the pack is absent.
 The optional addon README describes font selection and compatibility behavior.
+
+## Slim base font
+
+`Noto_AP` is a hybrid of Noto Sans CJK SC and modified Accidental Presidency
+glyphs. Core's `Noto_AP_Latin` is generated from that actual hybrid, preserving
+the retained English/Latin outlines, advances, and vertical metrics. It keeps
+Latin accents and common punctuation/currency, but removes CJK coverage.
+Using plain Accidental Presidency would change the size and spacing of the
+existing English appearance.
+
+BFInfinite defaults new English-client configurations to `Noto_AP_Latin`.
+On English clients, an existing saved `Noto_AP` selection resolves to the slim
+font when the optional pack is absent, then restores the full font when the
+pack is enabled. Other missing fonts and non-English clients retain the native
+client-font fallback.
+
+The generator is `scripts/subset-noto-ap.py`; its tool version is pinned in
+`.utils/requirements-fonts.txt`. Both repositories' CI checks regenerate the
+font in memory and verify exact output, glyph coverage, outlines and metrics.
+The generated font and license are ordinary packaged assets; players do not
+need the generation tools.
 
 ## Build and inspect
 

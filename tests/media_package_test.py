@@ -181,7 +181,9 @@ class MediaPackageTest(unittest.TestCase):
                          "Media/Fonts/NotoSansCJKsc_AP.ttf", "Media/Fonts/NotoSansCJKsc_Dolphin.ttf"):
             with self.subTest(optional=optional):
                 with zipfile.ZipFile(archive, "w") as package:
-                    for name in ("AbstractFramework.toc", "LICENSE", "README.md"):
+                    for name in ("AbstractFramework.toc", "LICENSE", "README.md",
+                                 "Media/Fonts/NotoSansCJKsc_AP_Latin.ttf",
+                                 "Media/Fonts/NotoSansCJKsc_AP_Latin-OFL.txt"):
                         package.writestr(f"AbstractFramework/{name}", "# fixture\n")
                     if optional:
                         package.writestr(f"AbstractFramework/{optional}", "optional media")
@@ -194,6 +196,19 @@ class MediaPackageTest(unittest.TestCase):
                     self.assertRegex(result.stderr, "optional media font|development-only file")
                 else:
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_core_package_requires_included_latin_font_and_license(self) -> None:
+        archive = self.root / "missing-base-font.zip"
+        with zipfile.ZipFile(archive, "w") as package:
+            for name in ("AbstractFramework.toc", "LICENSE", "README.md"):
+                package.writestr(f"AbstractFramework/{name}", "# fixture\n")
+        result = subprocess.run(
+            [str(REPO_ROOT / "scripts/check-package.sh"), str(archive)],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required package file is missing: AbstractFramework/Media/Fonts/NotoSansCJKsc_AP_Latin.ttf", result.stderr)
+        self.assertIn("required package file is missing: AbstractFramework/Media/Fonts/NotoSansCJKsc_AP_Latin-OFL.txt", result.stderr)
 
 
 if __name__ == "__main__":
