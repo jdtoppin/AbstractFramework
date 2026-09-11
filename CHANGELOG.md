@@ -1,3 +1,9 @@
+r44:
+
+- Move Noto_AP, Noto_Dolphin, and Unifont into the optional AbstractFramework_Media addon, while retaining the small Latin fonts in the core package.
+- Include a slim Noto_AP_Latin font with the original Noto_AP Latin glyphs and metrics in the core package.
+- Resolve unavailable Noto_AP selections to Noto_AP_Latin on English clients, and use the client's original UI font for other unavailable selections. Preserve saved choices and restore the full font when the media pack is installed again.
+
 r43:
 
 - Add a reusable binding-capture widget for modifier, keyboard, mouse-button, and mouse-wheel chords.

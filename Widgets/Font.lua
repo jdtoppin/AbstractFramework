@@ -85,8 +85,9 @@ font_tooltip:SetJustifyH("LEFT")
 ---------------------------------------------------------------------
 -- update base font
 ---------------------------------------------------------------------
----@param font string|nil font file path, set nil to use default font
+---@param font string|nil font name/file path, set nil to use default fonts
 function AF.UpdateBaseFont(font)
+    font = font and AF.LSM_GetFont(font)
     BASE_FONT_NORMAL = font or GameFontNormal:GetFont()
     BASE_FONT_CHAT = font or ChatFontNormal:GetFont()
     BASE_FONT_TOOLTIP = font or GameTooltipText:GetFont()
@@ -148,7 +149,6 @@ end
 ---------------------------------------------------------------------
 -- font group
 ---------------------------------------------------------------------
-local LSM = AF.Libs.LSM
 local fontGroup = {}
 
 ---@param group string
@@ -184,12 +184,8 @@ end
 ---@param justifyV? string defaults to "MIDDLE"
 ---@return Font|FontString
 function AF.CreateFont(group, name, font, size, flags, shadow, color, justifyH, justifyV)
-    font = font or BASE_FONT_NORMAL
+    font = font and AF.LSM_GetFont(font) or BASE_FONT_NORMAL
     color = color or "white"
-
-    if LSM:IsValid("font", font) then
-        font = LSM:Fetch("font", font)
-    end
 
     local obj = CreateFont(name)
     obj:SetFont(font, (size or FONT_NORMAL_SIZE) + AF.fontSizeDelta, flags or "")
@@ -267,6 +263,6 @@ function AF.GetFontProps(font)
     elseif font == "outline" then
         return font_outline:GetFont(), FONT_OUTLINE_SIZE + AF.fontSizeDelta, "OUTLINE", false
     else
-        return font, FONT_NORMAL_SIZE + AF.fontSizeDelta, "", true
+        return AF.LSM_GetFont(font), FONT_NORMAL_SIZE + AF.fontSizeDelta, "", true
     end
 end

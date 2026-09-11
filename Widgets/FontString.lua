@@ -1,5 +1,7 @@
 ---@class AbstractFramework
 local AF = select(2, ...)
+-- Host and bundled-library extensions to Lua's standard tables.
+-- luacheck: read globals string.utf8len string.utf8sub table.create
 
 ---------------------------------------------------------------------
 -- font string
@@ -32,7 +34,7 @@ function AF.CreateFontString(parent, text, color, font, layer)
     local fs = parent:CreateFontString(nil, layer or "OVERLAY")
     Mixin(fs, AF_FontStringMixin)
 
-    if type(font) == "string" and font:find("%.ttf$") then
+    if type(font) == "string" and (font:find("%.ttf$") or AF.GetOptionalFontName(font)) then
         AF.SetFont(fs, AF.GetFontProps(font))
     else
         fs:SetFontObject(font or "AF_FONT_NORMAL")
@@ -89,7 +91,7 @@ local function ResizeToFitText(self, frame, fontString, hPadding, vPadding, call
     vPadding = vPadding and vPadding * 2
     callbackDelay = callbackDelay or 0.1
 
-    self:SetScript("OnUpdate", function(self, elapsed)
+    self:SetScript("OnUpdate", function(updater, elapsed)
         if hPadding then
             frame:SetWidth(ceil(fontString:GetStringWidth() + hPadding))
         end
@@ -97,16 +99,16 @@ local function ResizeToFitText(self, frame, fontString, hPadding, vPadding, call
             frame:SetHeight(ceil(fontString:GetStringHeight() + vPadding))
         end
 
-        self.elapsed = self.elapsed + elapsed
-        if self.elapsed >= callbackDelay then
-            self:Hide()
+        updater.elapsed = updater.elapsed + elapsed
+        if updater.elapsed >= callbackDelay then
+            updater:Hide()
             if callback then callback(frame:GetSize()) end
         end
     end)
     self:Show()
 end
 
-local pool = AF.CreateObjectPool(function(pool)
+local resizePool = AF.CreateObjectPool(function(pool)
     local f = CreateFrame("Frame")
     f:Hide()
     f.ResizeToFitText = ResizeToFitText
@@ -123,7 +125,7 @@ end)
 ---@param callback function|nil called after resize is done
 ---@param callbackDelay number|nil seconds to wait before invoking callback, default 0.1
 function AF.ResizeToFitText(frame, fontString, hPadding, vPadding, callback, callbackDelay)
-    pool:Acquire():ResizeToFitText(frame, fontString, hPadding, vPadding, callback, callbackDelay)
+    resizePool:Acquire():ResizeToFitText(frame, fontString, hPadding, vPadding, callback, callbackDelay)
 end
 
 ---------------------------------------------------------------------

@@ -4,21 +4,20 @@ local LSM = AF.Libs.LSM
 local L = AF.L
 
 local strlower = string.lower
-local tinsert, tconcat = table.insert, table.concat
+local tinsert = table.insert
 
 ---------------------------------------------------------------------
 -- register media
 ---------------------------------------------------------------------
 -- fonts
-LSM:Register("font", "Noto_AP", AF.GetFont("NotoSansCJKsc_AP"), 255)
-LSM:Register("font", "Noto_Dolphin", AF.GetFont("NotoSansCJKsc_Dolphin"), 255)
+-- Larger multilingual fonts register from the optional AbstractFramework_Media addon.
 LSM:Register("font", "Accidental Presidency", AF.GetFont("Accidental_Presidency"), 255)
 LSM:Register("font", "Cal Sans", AF.GetFont("CalSans"), 255)
 LSM:Register("font", "Dolphin", AF.GetFont("Dolphin"), 255)
 LSM:Register("font", "Emblem", AF.GetFont("Emblem"), 255)
 LSM:Register("font", "Expressway", AF.GetFont("Expressway"), 255)
+LSM:Register("font", "Noto_AP_Latin", AF.GetFont("NotoSansCJKsc_AP_Latin"), 255)
 LSM:Register("font", "Visitor", AF.GetFont("Visitor"), 255)
-LSM:Register("font", "Unifont", AF.GetFont("Unifont.otf"), 255)
 
 -- statusbar
 LSM:Register("statusbar", "AF Plain", AF.GetPlainTexture())
@@ -35,6 +34,11 @@ LSM:Register("statusbar", "pfUI-U", AF.GetTexture("Bar_pfUI_U"))
 ---------------------------------------------------------------------
 local DEFAULT_BAR_TEXTURE = AF.GetPlainTexture()
 local DEFAULT_FONT = GameFontNormal:GetFont()
+-- English clients retain Noto_AP's Latin glyphs and metrics without the
+-- larger glyph sets from the optional pack.
+local OPTIONAL_FONT_FALLBACKS = LOCALE_enUS and {
+    Noto_AP = "Noto_AP_Latin",
+} or {}
 
 function AF.LSM_GetBarTexture(name)
     if name and LSM:IsValid("statusbar", name) then
@@ -60,9 +64,15 @@ function AF.LSM_GetBarTextureDropdownItems()
 end
 
 function AF.LSM_GetFont(name)
+    name = AF.GetOptionalFontName(name) or name
     if name and LSM:IsValid("font", name) then
         return LSM:Fetch("font", name)
-    elseif type(name) == "string" and name:lower():find(".ttf$") then
+    end
+
+    local fallbackName = OPTIONAL_FONT_FALLBACKS[name]
+    if fallbackName and LSM:IsValid("font", fallbackName) then
+        return LSM:Fetch("font", fallbackName)
+    elseif type(name) == "string" and name:lower():find("%.[ot]tf$") then
         return name
     end
     return DEFAULT_FONT

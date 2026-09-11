@@ -25,7 +25,14 @@ jobs:
       - name: Install Lua tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes lua5.1 lua-check luajit ripgrep
+          sudo apt-get install --yes lua5.1 lua-check luajit ripgrep python3-venv
+
+      - name: Verify slim font generation and metrics
+        run: |
+          python3 -m venv "$RUNNER_TEMP/af-font-tools"
+          "$RUNNER_TEMP/af-font-tools/bin/pip" install --disable-pip-version-check --no-deps -r .utils/requirements-fonts.txt
+          "$RUNNER_TEMP/af-font-tools/bin/python" scripts/subset-noto-ap.py --check
+          "$RUNNER_TEMP/af-font-tools/bin/python" tests/latin_font_subset_test.py
 
       - name: Verify source
         shell: bash

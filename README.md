@@ -16,6 +16,27 @@
 **AbstractFramework** is a minimalist World of Warcraft addon framework for fast widget creation.  
 It's easy to use and ensures pixel-perfect precision, making it ideal for developers seeking a clean and efficient interface.
 
+## Optional international fonts
+
+Core includes `Noto_AP_Latin`, a slim English/Latin subset of the existing
+`Noto_AP` hybrid with its glyph shapes, spacing, and vertical metrics retained.
+It includes accented Latin letters and common punctuation, with no CJK glyphs.
+The font is generated reproducibly from the full font; plain Accidental
+Presidency is not substituted because its sizing and metrics differ.
+
+From r44, the full `Noto_AP`, `Noto_Dolphin`, and `Unifont` are supplied by the separate
+`AbstractFramework_Media` download in this fork's GitHub releases. Install its
+folder alongside `AbstractFramework` in `Interface/AddOns`. The small plain
+`Dolphin` and other Latin fonts and all locale tables stay in core.
+
+On English clients, AF's font helpers use `Noto_AP_Latin` for an unavailable
+`Noto_AP` selection. Other unavailable selections use the original game font.
+Saved choices restore after the pack is enabled and the UI is reloaded. Addons
+using these fonts at startup should declare `AbstractFramework_Media` in
+`OptionalDeps`. Direct LibSharedMedia consumers must handle missing fonts.
+When upgrading from a full package, replace the old AbstractFramework folder
+to remove the former font binaries; keep your SavedVariables.
+
 ## Screenshot
 
 ![demo](https://raw.githubusercontent.com/enderneko/ImagePosts/main/1/af_demo.png)

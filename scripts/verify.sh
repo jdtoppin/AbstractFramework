@@ -6,6 +6,7 @@ cd "$repo_root"
 
 ./scripts/lint.sh "$@"
 python3 ./tests/external_pins_policy_test.py
+python3 ./tests/media_package_test.py
 python3 ./scripts/check-external-pins.py
 ./scripts/check-manifest.sh
 ./scripts/run-tests.sh

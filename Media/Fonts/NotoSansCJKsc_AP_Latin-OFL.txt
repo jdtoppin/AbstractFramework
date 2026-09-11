@@ -1,0 +1,141 @@
+Noto AP Latin (version 1.000)
+
+This is a Latin/UI-symbol subset of the existing NotoSansCJKsc_AP.ttf hybrid font.
+It retains that font's original glyph shapes, advances and vertical metrics.
+It is not a replacement made from the separate Accidental_Presidency.ttf.
+The full font remains available in AbstractFramework_Media.
+
+Source file:
+  OptionalMedia/AbstractFramework_Media/Media/Fonts/NotoSansCJKsc_AP.ttf
+Source SHA256:
+  55fe9ec3c00308f7d04e9a7c8da2093f54a202097dde1b4a718da617e4d82413
+Source internal version:
+  Version 2.004;November 1, 2024;FontCreator 15.0.0.2955 64-bit
+
+Reproducible generator: scripts/subset-noto-ap.py
+Generator dependency: fonttools==4.60.2 (.utils/requirements-fonts.txt)
+Retained Unicode ranges, intersected with the source's available characters:
+  U+0020-007E  Printable ASCII
+  U+00A0-024F  Latin-1 Supplement and Latin Extended A/B
+  U+1E00-1EFF  Latin Extended Additional
+  U+2000-206F  General punctuation
+  U+20A0-20CF  Currency symbols
+  U+2100-214F  Letterlike symbols
+  U+2190-21FF  Arrows used by controls and cast previews
+  U+2200-22FF  Mathematical operators and comparison symbols
+  U+25A0-25FF  Geometric shapes, including status circles/triangles
+  U+2700-27BF  Dingbats, including the Mythic+ completion checkmark
+  U+FFFD      Replacement character
+Required component/alternate glyphs and the original missing-glyph outline
+are retained by the subsetter. CJK character mappings are excluded.
+
+The derivative's internal family name is Noto AP Latin and its PostScript
+name is NotoAPLatin-Bold to distinguish it from the full font. The original
+copyright and OFL license records are preserved in the binary. The original
+bundled notice follows verbatim.
+
+-----------------------------------------------------------
+
+The NotoSansCJKsc_AP font is a combination of NotoSansCJKsc and Accidental_Presidency.
+NotoSansCJKsc_AP 字体由 NotoSansCJKsc 和 Accidental_Presidency 两种字体组合而成。
+
+NotoSansCJKsc:
+    scale: 90%
+    voffset: -25
+
+-----------------------------------------------------------
+The following is the original license content
+-----------------------------------------------------------
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://openfontlicense.org
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.

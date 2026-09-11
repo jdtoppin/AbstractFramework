@@ -1,0 +1,2 @@
+# Only needed to regenerate or verify the checked-in Latin font subset.
+fonttools==4.60.2
