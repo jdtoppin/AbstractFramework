@@ -46,6 +46,8 @@ ignore:
   - .utils
   - AGENTS.md
   - CONTRIBUTING.md
+  - OptionalMedia
+  - docs
   - scripts
   - tests
   - Libs/LibStub/tests

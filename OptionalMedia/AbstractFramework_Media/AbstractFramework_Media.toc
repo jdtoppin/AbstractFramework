@@ -1,0 +1,10 @@
+## Interface: 11508,20505,38000,50503,120001,120007,120100
+## Title: AbstractFramework Media
+## Notes: Optional multilingual fonts for AbstractFramework and BFInfinite.
+## Author: enderneko
+## Version: r1
+## Dependencies: AbstractFramework
+## DefaultState: enabled
+## IconTexture: Interface\AddOns\AbstractFramework\Media\Icons\AF
+
+Register.lua

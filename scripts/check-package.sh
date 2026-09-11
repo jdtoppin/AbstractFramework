@@ -60,6 +60,8 @@ dev_only = {
     ".utils",
     "AGENTS.md",
     "CONTRIBUTING.md",
+    "OptionalMedia",
+    "docs",
     "scripts",
     "tests",
 }
@@ -89,6 +91,10 @@ with zipfile.ZipFile(archive) as package:
             continue
         if len(path.parts) > 1 and path.parts[1] in dev_only:
             errors.append(f"development-only file was packaged: {name}")
+        if path.name in {
+            "NotoSansCJKsc_AP.ttf", "NotoSansCJKsc_Dolphin.ttf", "Unifont.otf"
+        }:
+            errors.append(f"optional media font leaked into the core package: {name}")
         file_type = stat.S_IFMT(entry.external_attr >> 16)
         if file_type == stat.S_IFLNK:
             errors.append(f"symbolic links are not allowed in the package: {name}")

@@ -183,6 +183,7 @@ while xml_queue:
 
 excluded_roots = {
     "Libs",
+    "OptionalMedia",
     "scripts",
     "tests",
     ".github",

@@ -214,6 +214,28 @@ end
 ---------------------------------------------------------------------
 -- get fonts
 ---------------------------------------------------------------------
+local optionalFontNames = {
+    ["noto_ap"] = "Noto_AP",
+    ["noto_dolphin"] = "Noto_Dolphin",
+    ["unifont"] = "Unifont",
+    ["notosanscjksc_ap.ttf"] = "Noto_AP",
+    ["notosanscjksc_dolphin.ttf"] = "Noto_Dolphin",
+    ["unifont.otf"] = "Unifont",
+}
+
+-- Resolve optional names and saved file paths from before the split as well as
+-- paths saved while the pack was installed. Unknown/custom paths stay intact.
+---@param font? string
+---@return string? sharedMediaName
+function AF.GetOptionalFontName(font)
+    if type(font) ~= "string" then return end
+
+    local file = font:lower():gsub("/", "\\")
+    file = file:gsub("^interface\\addons\\abstractframework\\media\\fonts\\", "")
+    file = file:gsub("^interface\\addons\\abstractframework_media\\media\\fonts\\", "")
+    return optionalFontNames[file]
+end
+
 ---@param font string fileName
 ---@param addon? string addonFolderName
 ---@return string fontPath
@@ -221,6 +243,13 @@ function AF.GetFont(font, addon)
     local suffix = ""
     if not font:lower():find("%.[ot]tf$") then
         suffix = ".ttf"
+    end
+
+    if not addon or addon == "AbstractFramework" then
+        local optionalName = AF.GetOptionalFontName(font .. suffix)
+        if optionalName then
+            return AF.LSM_GetFont(optionalName)
+        end
     end
 
     if addon then
